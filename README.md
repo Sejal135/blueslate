@@ -15,17 +15,17 @@ blueslate/
 ### Frontend
 
 ```bash
+source venv/bin/activate
 cd frontend
-npm install
 npm run dev
+#http://localhost:3000
 ```
 
 ### Backend
 
 ```bash
-cd backend
-python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+cd backend
 uvicorn app.main:app --reload
+#http://localhost:8000/docs
 ```
