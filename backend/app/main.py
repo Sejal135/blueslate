@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import json
+from datetime import datetime
 from dotenv import load_dotenv
 from firecrawl import FirecrawlApp
 from groq import Groq
@@ -16,7 +17,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://blueslate.vercel.app",  # update this after Vercel deployment
+        "https://blueslate.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -175,10 +176,91 @@ SCRAPED CONTENT:
             "structured_data": structured_data,
             "saved_to_db": True
         }
-    
+
     except Exception as e:
         return {
             "status": "error",
             "message": str(e)
         }
-    
+
+@app.post("/webhook")
+async def handle_webhook(payload: dict):
+    try:
+        # Extract call data from Retell AI payload
+        call_id = payload.get("call_id", "")
+        transcript = payload.get("transcript", "")
+        recording_url = payload.get("recording_url", "")
+        start_timestamp = payload.get("start_timestamp", 0)
+        end_timestamp = payload.get("end_timestamp", 0)
+        duration = int((end_timestamp - start_timestamp) / 1000) if end_timestamp and start_timestamp else 0
+
+        # Send transcript to Groq for lead extraction
+        lead_prompt = f"""
+Extract caller information from this call transcript.
+Return ONLY a valid JSON object with exactly these fields, no explanation, no markdown fences:
+{{
+  "caller_name": "string or Unknown if not mentioned",
+  "phone_number": "string or Unknown if not mentioned",
+  "core_interest": "string - what they were interested in",
+  "call_outcome": "string - one of: booked_trial, callback_requested, not_interested, general_inquiry"
+}}
+
+TRANSCRIPT:
+{transcript}
+"""
+
+        lead_extraction = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": lead_prompt}],
+            model="llama-3.3-70b-versatile",
+            temperature=0.1
+        )
+
+        lead_text = lead_extraction.choices[0].message.content.strip()
+
+        if lead_text.startswith("```"):
+            lead_text = lead_text.split("```")[1]
+            if lead_text.startswith("json"):
+                lead_text = lead_text[4:]
+
+        lead_data = json.loads(lead_text)
+
+        # Get tenant ID
+        tenant_response = supabase_client.table("tenants")\
+            .select("id")\
+            .eq("slug", "xpleague-frisco")\
+            .single()\
+            .execute()
+
+        tenant_id = tenant_response.data["id"]
+
+        # Save lead to Supabase
+        lead_response = supabase_client.table("leads")\
+            .insert({
+                "tenant_id": tenant_id,
+                "caller_name": lead_data.get("caller_name", "Unknown"),
+                "phone_number": lead_data.get("phone_number", "Unknown"),
+                "core_interest": lead_data.get("core_interest", ""),
+                "call_outcome": lead_data.get("call_outcome", "general_inquiry"),
+                "raw_transcript": transcript,
+                "call_duration_seconds": duration,
+                "call_timestamp": datetime.utcnow().isoformat()
+            })\
+            .execute()
+
+        lead_id = lead_response.data[0]["id"]
+
+        # Save call log
+        supabase_client.table("call_logs")\
+            .insert({
+                "tenant_id": tenant_id,
+                "lead_id": lead_id,
+                "provider_call_id": call_id,
+                "status": "completed",
+                "recording_url": recording_url
+            })\
+            .execute()
+
+        return {"status": "success", "lead_id": lead_id}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
