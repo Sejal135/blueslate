@@ -186,6 +186,8 @@ SCRAPED CONTENT:
 @app.post("/webhook")
 async def handle_webhook(payload: dict):
     try:
+        # Log the full payload to see what Retell sends
+        print("RETELL WEBHOOK PAYLOAD:", json.dumps(payload, indent=2))
         # Extract call data from Retell AI payload
         call_id = payload.get("call_id", "")
         transcript = payload.get("transcript", "")
