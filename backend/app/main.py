@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from firecrawl import FirecrawlApp
 from groq import Groq
@@ -188,26 +188,25 @@ async def handle_webhook(payload: dict):
     try:
         print("RETELL WEBHOOK PAYLOAD:", json.dumps(payload, indent=2))
 
-        # Extract call data using correct Retell AI field names
         call_object = payload.get("call", {})
         call_id = call_object.get("call_id", "")
         recording_url = call_object.get("recording_url", "")
         duration = call_object.get("call_cost", {}).get("total_duration_seconds", 0)
 
-        # Build transcript string from transcript array
+        # Use call_summary for lead extraction — it has all the info cleanly
+        call_summary = call_object.get("call_analysis", {}).get("call_summary", "")
+
+        # Build readable transcript from transcript array as backup
         transcript_list = call_object.get("transcript", [])
         transcript_text = ""
         for entry in transcript_list:
             role = entry.get("role", "")
             content = entry.get("content", "")
-            if role and content:
+            if role and content and role in ["agent", "user"]:
                 transcript_text += f"{role}: {content}\n"
 
-        # Also use call_summary from call_analysis if transcript is empty
-        call_summary = call_object.get("call_analysis", {}).get("call_summary", "")
-
-        # Use transcript if available, otherwise fall back to summary
-        text_to_analyze = transcript_text if transcript_text else call_summary
+        # Use summary for extraction, save full transcript for records
+        text_to_analyze = call_summary if call_summary else transcript_text
 
         # Send to Groq for lead extraction
         lead_prompt = f"""
@@ -258,7 +257,7 @@ TRANSCRIPT:
                 "call_outcome": lead_data.get("call_outcome", "general_inquiry"),
                 "raw_transcript": transcript_text,
                 "call_duration_seconds": duration,
-                "call_timestamp": datetime.utcnow().isoformat()
+                "call_timestamp": datetime.now(timezone.utc).isoformat()
             })\
             .execute()
 
