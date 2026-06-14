@@ -186,17 +186,30 @@ SCRAPED CONTENT:
 @app.post("/webhook")
 async def handle_webhook(payload: dict):
     try:
-        # Log the full payload to see what Retell sends
         print("RETELL WEBHOOK PAYLOAD:", json.dumps(payload, indent=2))
-        # Extract call data from Retell AI payload
-        call_id = payload.get("call_id", "")
-        transcript = payload.get("transcript", "")
-        recording_url = payload.get("recording_url", "")
-        start_timestamp = payload.get("start_timestamp", 0)
-        end_timestamp = payload.get("end_timestamp", 0)
-        duration = int((end_timestamp - start_timestamp) / 1000) if end_timestamp and start_timestamp else 0
 
-        # Send transcript to Groq for lead extraction
+        # Extract call data using correct Retell AI field names
+        call_object = payload.get("call", {})
+        call_id = call_object.get("call_id", "")
+        recording_url = call_object.get("recording_url", "")
+        duration = call_object.get("call_cost", {}).get("total_duration_seconds", 0)
+
+        # Build transcript string from transcript array
+        transcript_list = call_object.get("transcript", [])
+        transcript_text = ""
+        for entry in transcript_list:
+            role = entry.get("role", "")
+            content = entry.get("content", "")
+            if role and content:
+                transcript_text += f"{role}: {content}\n"
+
+        # Also use call_summary from call_analysis if transcript is empty
+        call_summary = call_object.get("call_analysis", {}).get("call_summary", "")
+
+        # Use transcript if available, otherwise fall back to summary
+        text_to_analyze = transcript_text if transcript_text else call_summary
+
+        # Send to Groq for lead extraction
         lead_prompt = f"""
 Extract caller information from this call transcript.
 Return ONLY a valid JSON object with exactly these fields, no explanation, no markdown fences:
@@ -208,7 +221,7 @@ Return ONLY a valid JSON object with exactly these fields, no explanation, no ma
 }}
 
 TRANSCRIPT:
-{transcript}
+{text_to_analyze}
 """
 
         lead_extraction = groq_client.chat.completions.create(
@@ -243,7 +256,7 @@ TRANSCRIPT:
                 "phone_number": lead_data.get("phone_number", "Unknown"),
                 "core_interest": lead_data.get("core_interest", ""),
                 "call_outcome": lead_data.get("call_outcome", "general_inquiry"),
-                "raw_transcript": transcript,
+                "raw_transcript": transcript_text,
                 "call_duration_seconds": duration,
                 "call_timestamp": datetime.utcnow().isoformat()
             })\
