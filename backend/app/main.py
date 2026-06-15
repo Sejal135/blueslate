@@ -191,25 +191,18 @@ async def handle_webhook(payload: dict):
         call_object = payload.get("call", {})
         print("TRANSCRIPT RAW:", json.dumps(call_object.get("transcript", "NOT FOUND"), indent=2))
         print("TOP LEVEL TRANSCRIPT:", json.dumps(payload.get("transcript", "NOT FOUND"), indent=2))
-        
+
+
         call_id = call_object.get("call_id", "")
         recording_url = call_object.get("recording_url", "")
         duration = call_object.get("call_cost", {}).get("total_duration_seconds", 0)
 
-        # Use call_summary for lead extraction — it has all the info cleanly
+        # Transcript is a pre-formatted string inside call_object
+        transcript_text = call_object.get("transcript", "")
+
+        # Use call_summary as backup if transcript is empty
         call_summary = call_object.get("call_analysis", {}).get("call_summary", "")
-
-        # Build readable transcript from transcript array as backup
-        transcript_list = call_object.get("transcript", [])
-        transcript_text = ""
-        for entry in transcript_list:
-            role = entry.get("role", "")
-            content = entry.get("content", "")
-            if role and content and role in ["agent", "user"]:
-                transcript_text += f"{role}: {content}\n"
-
-        # Use summary for extraction, save full transcript for records
-        text_to_analyze = call_summary if call_summary else transcript_text
+        text_to_analyze = transcript_text if transcript_text else call_summary
 
         # Send to Groq for lead extraction
         lead_prompt = f"""
