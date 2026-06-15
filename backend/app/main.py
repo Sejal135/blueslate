@@ -17,7 +17,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://blueslate.vercel.app",
+        "https://blueslate-gamma.vercel.app",
+        "https://blueslate-git-main-sejal135s-projects.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
