@@ -274,3 +274,31 @@ TRANSCRIPT:
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+@app.get("/leads")
+async def get_leads():
+    try:
+        tenant_response = supabase_client.table("tenants")\
+            .select("id")\
+            .eq("slug", "xpleague-frisco")\
+            .single()\
+            .execute()
+
+        tenant_id = tenant_response.data["id"]
+
+        leads_response = supabase_client.table("leads")\
+            .select("*")\
+            .eq("tenant_id", tenant_id)\
+            .order("call_timestamp", desc=True)\
+            .execute()
+
+        return {
+            "status": "success",
+            "leads": leads_response.data
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }

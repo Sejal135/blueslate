@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Blueslate",
-  description: "AI receptionist for franchise businesses",
+  title: "Blueslate — XP League Frisco",
+  description: "AI Receptionist Dashboard",
 };
 
 export default function RootLayout({
@@ -12,7 +12,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body style={{ margin: 0, padding: 0, background: "#060d16" }}>
+        {children}
+      </body>
     </html>
   );
 }
