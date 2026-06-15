@@ -189,6 +189,9 @@ async def handle_webhook(payload: dict):
         print("RETELL WEBHOOK PAYLOAD:", json.dumps(payload, indent=2))
 
         call_object = payload.get("call", {})
+        print("TRANSCRIPT RAW:", json.dumps(call_object.get("transcript", "NOT FOUND"), indent=2))
+        print("TOP LEVEL TRANSCRIPT:", json.dumps(payload.get("transcript", "NOT FOUND"), indent=2))
+        
         call_id = call_object.get("call_id", "")
         recording_url = call_object.get("recording_url", "")
         duration = call_object.get("call_cost", {}).get("total_duration_seconds", 0)
