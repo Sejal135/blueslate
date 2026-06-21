@@ -1,0 +1,20 @@
+/* Blueslate v2.0 design tokens (spec §10) */
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap');
+
+:root {
+  --brand-slate:    #0F1923;
+  --brand-teal:     #0EA98B;
+  --brand-blue:     #1A6CF0;
+  --brand-coral:    #F05A36;
+  --brand-amber:    #F5A623;
+  --text-primary:   #111827;
+  --text-secondary: #374151;
+  --text-muted:     #6B7280;
+  --surface-base:   #FFFFFF;
+  --surface-subtle: #F8FAFC;
+  --border-default: #E5E7EB;
+
+  --font-display: 'DM Serif Display', serif;
+  --font-sans:    'DM Sans', system-ui, sans-serif;
+  --font-mono:    'DM Mono', ui-monospace, monospace;
+}

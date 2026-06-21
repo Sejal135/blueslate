@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Blueslate — XP League Frisco",
@@ -12,7 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, padding: 0, background: "#060d16" }}>
+      <body style={{ margin: 0, padding: 0, background: "#060d16", fontFamily: "var(--font-sans)" }}>
         {children}
       </body>
     </html>
