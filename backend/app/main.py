@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from firecrawl import FirecrawlApp
 from groq import Groq
 from supabase import create_client
+import inngest.fast_api
+from app.inngest_functions import inngest_client, test_function, run_kb_ingestion
 
 load_dotenv()
 
@@ -24,6 +26,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# for testing inngest
+# Serve Inngest functions at /api/inngest
+inngest.fast_api.serve(app, inngest_client, [test_function, run_kb_ingestion])
 
 # Initialize Firecrawl
 firecrawl = FirecrawlApp(api_key=os.getenv("FIRECRAWL_API_KEY"))
@@ -45,144 +51,37 @@ class ScrapeRequest(BaseModel):
 @app.get("/health")
 def health_check():
     return {"status": "ok", "project": "blueslate"}
-
 @app.post("/scrape")
 async def scrape_url(request: ScrapeRequest):
     try:
-        target_urls = [
-            f"{request.url.rstrip('/')}/about-us",
-            f"{request.url.rstrip('/')}/trial-session",
-            f"{request.url.rstrip('/')}/book-your-party",
-            f"{request.url.rstrip('/')}/summercamps",
-            f"{request.url.rstrip('/')}/additional-programs",
-        ]
-
-        all_content = []
-        for url in target_urls:
-            try:
-                result = firecrawl.scrape_url(
-                    url,
-                    formats=["markdown"],
-                    actions=[{"type": "wait", "milliseconds": 8000}]
-                )
-                if result.markdown and len(result.markdown.strip()) > 100:
-                    all_content.append(
-                        f"## Page: {url}\n{result.markdown}"
-                    )
-            except Exception:
-                continue
-
-        # Combine and truncate to stay within Groq token limit
-        combined_content = "\n\n---\n\n".join(all_content)
-        if len(combined_content) > 8000:
-            combined_content = combined_content[:8000]
-
-        # Send to Groq for structured extraction
-        prompt = f"""
-You are extracting structured knowledge from a youth esports franchise website.
-Extract all useful business information from the following scraped content.
-
-Return ONLY a valid JSON object with exactly these fields, no explanation, no markdown fences:
-{{
-  "business_name": "string",
-  "phone": "string",
-  "location": "string",
-  "age_range": "string",
-  "games_offered": ["list of games"],
-  "programs": [
-    {{
-      "name": "string",
-      "description": "string",
-      "price": "string",
-      "schedule": "string"
-    }}
-  ],
-  "trial_info": "string",
-  "birthday_parties": [
-    {{
-      "package_name": "string",
-      "price": "string",
-      "details": "string"
-    }}
-  ],
-  "staff": [
-    {{
-      "name": "string",
-      "role": "string"
-    }}
-  ],
-  "mission": "string",
-  "additional_info": "string"
-}}
-
-Ignore any cart, checkout, or payment UI content.
-Only extract real business information.
-
-SCRAPED CONTENT:
-{combined_content}
-"""
-
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.1
-        )
-
-        response_text = chat_completion.choices[0].message.content.strip()
-
-        # Clean up response — remove markdown code fences if present
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
-
-        structured_data = json.loads(response_text)
-
-        # Get tenant ID from Supabase
-        tenant_response = supabase_client.table("tenants")\
-            .select("id")\
-            .eq("slug", request.tenant_slug)\
-            .single()\
-            .execute()
-
+        tenant_response = supabase_client.table("tenants") \
+            .select("id").eq("slug", request.tenant_slug).single().execute()
         tenant_id = tenant_response.data["id"]
 
-        # Deactivate old knowledge base entries for this tenant
-        supabase_client.table("knowledge_base")\
-            .update({"is_active": False})\
-            .eq("tenant_id", tenant_id)\
-            .execute()
+        job = supabase_client.table("kb_jobs").insert({
+            "tenant_id": tenant_id,
+            "source_type": "scrape",
+            "source_ref": request.url,
+            "status": "queued",
+            "message": "Queued...",
+        }).execute()
+        job_id = job.data[0]["id"]
 
-        # Save new structured data
-        supabase_client.table("knowledge_base")\
-            .insert({
+        await inngest_client.send(inngest.Event(
+            name="kb/ingest.requested",
+            data={
+                "job_id": job_id,
                 "tenant_id": tenant_id,
-                "source_url": request.url,
-                "raw_content": combined_content,
-                "structured_data": structured_data,
-                "is_active": True
-            })\
-            .execute()
+                "tenant_slug": request.tenant_slug,
+                "url": request.url,
+            },
+        ))
 
-        return {
-            "status": "success",
-            "url": request.url,
-            "tenant_slug": request.tenant_slug,
-            "pages_scraped": len(all_content),
-            "structured_data": structured_data,
-            "saved_to_db": True
-        }
+        return {"status": "queued", "job_id": job_id}
 
     except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        return {"status": "error", "message": str(e)}
+    
 
 @app.post("/webhook")
 async def handle_webhook(payload: dict):
@@ -275,7 +174,15 @@ TRANSCRIPT:
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
-    
+
+@app.get("/kb-jobs/{job_id}")
+async def get_kb_job(job_id: str):
+    try:
+        res = supabase_client.table("kb_jobs").select("*").eq("id", job_id).single().execute()
+        return {"status": "success", "job": res.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.get("/leads")
 async def get_leads():
     try:
@@ -303,3 +210,4 @@ async def get_leads():
             "status": "error",
             "message": str(e)
         }
+    

@@ -4,3 +4,4 @@ python-dotenv
 supabase
 firecrawl-py
 groq
+inngest
