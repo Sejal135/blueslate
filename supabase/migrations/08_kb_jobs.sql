@@ -20,3 +20,6 @@ drop policy if exists tenant_isolation_kb_jobs on kb_jobs;
 create policy tenant_isolation_kb_jobs on kb_jobs
   using (tenant_id = (current_setting('app.tenant_id', true))::uuid)
   with check (tenant_id = (current_setting('app.tenant_id', true))::uuid);
+
+-- after create table + RLS policy:
+grant select, insert, update, delete on public.kb_jobs to service_role;
