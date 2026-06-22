@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, Form
+import uuid
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
@@ -70,10 +71,10 @@ async def scrape_url(request: ScrapeRequest):
         await inngest_client.send(inngest.Event(
             name="kb/ingest.requested",
             data={
-                "job_id": job_id,
-                "tenant_id": tenant_id,
-                "tenant_slug": request.tenant_slug,
-                "url": request.url,
+                "job_id": job_id, 
+                "tenant_id": tenant_id, 
+                "source_type": "scrape", 
+                "source_ref": request.url
             },
         ))
 
@@ -81,7 +82,71 @@ async def scrape_url(request: ScrapeRequest):
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
-    
+
+# to read different types of file uploads and inngest it
+@app.post("/ingest/file")
+async def ingest_file(tenant_slug: str = Form(...), file: UploadFile = File(...)):
+    try:
+        tenant = supabase_client.table("tenants").select("id").eq("slug", tenant_slug).single().execute()
+        tenant_id = tenant.data["id"]
+
+        contents = await file.read()
+        safe_name = (file.filename or "upload").replace("/", "_")
+        path = f"{tenant_id}/{uuid.uuid4()}_{safe_name}"
+
+        supabase_client.storage.from_("kb-uploads").upload(
+            path, contents, {"content-type": file.content_type or "application/octet-stream"}
+        )
+
+        job = supabase_client.table("kb_jobs").insert({
+            "tenant_id": tenant_id,
+            "source_type": "upload",
+            "source_ref": path,
+            "status": "queued",
+            "message": "Queued...",
+        }).execute()
+        job_id = job.data[0]["id"]
+
+        await inngest_client.send(inngest.Event(
+            name="kb/ingest.requested",
+            data={"job_id": job_id, "tenant_id": tenant_id, "source_type": "upload", "source_ref": path},
+        ))
+        return {"status": "queued", "job_id": job_id}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}   
+
+@app.post("/ingest/voice")
+async def ingest_voice(tenant_slug: str = Form(...), file: UploadFile = File(...)):
+    try:
+        tenant = supabase_client.table("tenants").select("id").eq("slug", tenant_slug).single().execute()
+        tenant_id = tenant.data["id"]
+
+        contents = await file.read()
+        safe_name = (file.filename or "voice-note").replace("/", "_")
+        path = f"{tenant_id}/{uuid.uuid4()}_{safe_name}"
+
+        supabase_client.storage.from_("kb-uploads").upload(
+            path, contents, {"content-type": file.content_type or "audio/webm"}
+        )
+
+        job = supabase_client.table("kb_jobs").insert({
+            "tenant_id": tenant_id,
+            "source_type": "voice",
+            "source_ref": path,
+            "status": "queued",
+            "message": "Queued...",
+        }).execute()
+        job_id = job.data[0]["id"]
+
+        await inngest_client.send(inngest.Event(
+            name="kb/ingest.requested",
+            data={"job_id": job_id, "tenant_id": tenant_id, "source_type": "voice", "source_ref": path},
+        ))
+        return {"status": "queued", "job_id": job_id}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.post("/webhook")
 async def handle_webhook(payload: dict):

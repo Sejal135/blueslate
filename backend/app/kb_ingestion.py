@@ -1,3 +1,7 @@
+import io
+from pypdf import PdfReader
+from docx import Document
+
 import os
 import json
 from datetime import datetime, timezone
@@ -143,3 +147,35 @@ def save_kb(tenant_id: str, url: str, combined_content: str, structured_data: di
         "structured_data": structured_data,
         "is_active": True,
     }).execute()
+
+# downloads the file from the supabase storage bucket and pulls text out, same 8000-char cap as the scrape
+def parse_file(storage_path: str) -> str:
+    data = supabase_client.storage.from_("kb-uploads").download(storage_path)
+    lower = storage_path.lower()
+
+    if lower.endswith(".pdf"):
+        reader = PdfReader(io.BytesIO(data))
+        text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    elif lower.endswith(".docx"):
+        doc = Document(io.BytesIO(data))
+        text = "\n".join(p.text for p in doc.paragraphs)
+    elif lower.endswith(".txt"):
+        text = data.decode("utf-8", errors="ignore")
+    else:
+        raise ValueError(f"Unsupported file type: {storage_path}")
+
+    text = text.strip()
+    return text[:8000] if len(text) > 8000 else text
+
+# the owner records a quick clip, and Groq Whisper turns it into text that flows through the exact same extract → save
+def transcribe_voice(storage_path: str) -> str:
+    data = supabase_client.storage.from_("kb-uploads").download(storage_path)
+    filename = storage_path.split("/")[-1]
+
+    transcription = groq_client.audio.transcriptions.create(
+        file=(filename, data),
+        model="whisper-large-v3",
+    )
+
+    text = transcription.text.strip()
+    return text[:8000] if len(text) > 8000 else text

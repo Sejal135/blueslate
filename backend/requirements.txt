@@ -5,3 +5,6 @@ supabase
 firecrawl-py
 groq
 inngest
+pypdf
+python-docx
+python-multipart
