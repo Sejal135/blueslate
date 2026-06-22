@@ -50,14 +50,25 @@ isolation from day one.
 - Pattern: wrap each phase of long work in `await ctx.step.run(...)` for durable, memoized, per-step retries.
 
 ## KB ingestion flow
-- `POST /scrape` is enqueue-only: looks up tenant, inserts a `kb_jobs` row, sends `kb/ingest.requested`,
-  returns `{job_id}` instantly.
-- `run-kb-ingestion` runs scrape → extract → save as steps, updating `kb_jobs.status`
+- Three ingest endpoints, all enqueue-only (look up tenant, store source if needed, insert a `kb_jobs`
+  row, send `kb/ingest.requested`, return `{job_id}` instantly):
+  - `POST /scrape` — source_type `scrape` (Firecrawl).
+  - `POST /ingest/file` — source_type `upload`; stores file in the `kb-uploads` Supabase Storage bucket,
+    parses PDF/DOCX/TXT.
+  - `POST /ingest/voice` — source_type `voice`; stores audio in `kb-uploads`, transcribes via Groq Whisper.
+- `run-kb-ingestion` branches on `source_type` to get the text (scrape / parse-file / transcribe), then
+  runs shared steps: extract (Groq) → upsert-source → rebuild-kb. Updates `kb_jobs.status`
   (queued → scraping → extracting → merging → completed/failed).
 - `GET /kb-jobs/{job_id}` is the polling endpoint for the UI.
-- Known gap: the scrape's fixed URL list doesn't capture pricing — expected; will be filled by the owner
-  via upload/voice note in the source-priority merge (voice > upload > scrape > brand KB > activity config).
-
+- Source-priority merge: each ingestion writes a layer to `kb_sources` (voice 5 > upload 4 > scrape 3 >
+  brand 2). `rebuild_kb(tenant_id)` overlays them low→high (higher-trust non-empty field wins) into the
+  single active `knowledge_base` row that the agent reads. List fields overwrite rather than union.
+- Known gaps (deferred, not bugs): the scrape's fixed URL list misses pages like pricing (owners fill via
+  upload/voice); `extract_kb`'s Groq prompt is still hardcoded to "esports website" (make activity-aware
+  later); `activity_config` is intentionally NOT in the field-merge (different shape, used at prompt time).
+- Helpers in `backend/app/kb_ingestion.py`: `scrape_site`, `parse_file`, `transcribe_voice`, `extract_kb`,
+  `upsert_source`, `rebuild_kb`, `set_job_status`. (`save_kb` was removed — superseded by upsert + rebuild.)
+  
 ## Frontend conventions
 - Styling is INLINE React style objects (no CSS Modules, no Tailwind).
 - Design tokens: CSS vars in `frontend/src/app/globals.css` (`:root`) + a `tokens.ts` object that
