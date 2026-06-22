@@ -132,21 +132,54 @@ SCRAPED CONTENT:
     return json.loads(response_text)
 
 
-def save_kb(tenant_id: str, url: str, combined_content: str, structured_data: dict) -> None:
-    # Deactivate old KB entries for this tenant
-    supabase_client.table("knowledge_base") \
-        .update({"is_active": False}) \
-        .eq("tenant_id", tenant_id) \
-        .execute()
+SOURCE_PRIORITY = {"voice": 5, "upload": 4, "scrape": 3, "brand": 2}
 
-    # Insert the fresh KB
+
+def upsert_source(tenant_id: str, source_type: str, source_ref: str,
+                  raw_content: str, structured_data: dict) -> None:
+    supabase_client.table("kb_sources").upsert(
+        {
+            "tenant_id": tenant_id,
+            "source_type": source_type,
+            "priority": SOURCE_PRIORITY.get(source_type, 3),
+            "source_ref": source_ref,
+            "raw_content": raw_content,
+            "structured_data": structured_data,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        on_conflict="tenant_id,source_type",
+    ).execute()
+
+
+def _is_empty(value) -> bool:
+    return value is None or value == "" or value == [] or value == {}
+
+
+def rebuild_kb(tenant_id: str) -> dict:
+    rows = supabase_client.table("kb_sources") \
+        .select("structured_data, priority") \
+        .eq("tenant_id", tenant_id) \
+        .order("priority", desc=False) \
+        .execute().data
+
+    merged: dict = {}
+    for row in rows:  # lowest priority first; higher priority overwrites on non-empty
+        for key, value in (row.get("structured_data") or {}).items():
+            if not _is_empty(value):
+                merged[key] = value
+
+    # Write the merged result as the single active knowledge_base row (what the agent reads)
+    supabase_client.table("knowledge_base").update({"is_active": False}) \
+        .eq("tenant_id", tenant_id).execute()
     supabase_client.table("knowledge_base").insert({
         "tenant_id": tenant_id,
-        "source_url": url,
-        "raw_content": combined_content,
-        "structured_data": structured_data,
+        "source_url": "merged",
+        "raw_content": "",
+        "structured_data": merged,
         "is_active": True,
     }).execute()
+
+    return merged
 
 # downloads the file from the supabase storage bucket and pulls text out, same 8000-char cap as the scrape
 def parse_file(storage_path: str) -> str:

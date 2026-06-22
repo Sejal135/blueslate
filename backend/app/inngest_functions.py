@@ -3,7 +3,7 @@ import logging
 from dotenv import load_dotenv
 import inngest
 
-from app.kb_ingestion import scrape_site, extract_kb, save_kb, set_job_status, parse_file, transcribe_voice
+from app.kb_ingestion import scrape_site, extract_kb, set_job_status, parse_file, transcribe_voice, upsert_source, rebuild_kb
 
 load_dotenv()  # ensures INNGEST_DEV is read before the client is created
 
@@ -21,6 +21,7 @@ async def test_function(ctx: inngest.Context) -> dict:
     ctx.logger.info("Inngest test function fired")
     name = ctx.event.data.get("name", "world")
     return {"message": f"hello, {name}"}
+
 
 @inngest_client.create_function(
     fn_id="run-kb-ingestion",
@@ -58,15 +59,16 @@ async def run_kb_ingestion(ctx: inngest.Context) -> dict:
                            lambda: set_job_status(job_id, "extracting", "Extracting your programs, pricing & schedule..."))
         structured = await ctx.step.run("extract", lambda: extract_kb(content))
 
-        # 3. Save (shared)
         await ctx.step.run("status-saving",
-                           lambda: set_job_status(job_id, "merging", "Saving your agent's knowledge..."))
-        await ctx.step.run("save", lambda: save_kb(tenant_id, source_ref, content, structured))
+                           lambda: set_job_status(job_id, "merging", "Merging into your agent's knowledge..."))
+        await ctx.step.run("upsert-source",
+                           lambda: upsert_source(tenant_id, source_type, source_ref, content, structured))
+        merged = await ctx.step.run("rebuild-kb", lambda: rebuild_kb(tenant_id))
 
         await ctx.step.run("status-done",
                            lambda: set_job_status(job_id, "completed",
-                                                  "Done! We added that to your agent's knowledge.",
-                                                  structured_data=structured))
+                                                  "Done! We merged that into your agent's knowledge.",
+                                                  structured_data=merged))
         return {"job_id": job_id, "status": "completed"}
 
     except Exception as e:
