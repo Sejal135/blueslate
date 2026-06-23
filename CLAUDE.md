@@ -1,15 +1,15 @@
 # Blueslate — Claude Code project memory
 
 Blueslate is a multi-tenant, AI-native GTM platform for kids-enrichment franchises.
-Module 1 is a voice agent (inbound/outbound calls + lead capture); Module 2 is an AI
-content studio. Everything is grounded in a per-tenant knowledge base. Pilot tenant:
+Module 1 is a voice agent (inbound calls + lead capture); Module 2 is an AI
+content studio + outbound calls. Everything is grounded in a per-tenant knowledge base. Pilot tenant:
 XP League Frisco (Esports). Hard constraints: $0 cost (free tiers only) and multi-tenant
 isolation from day one.
 
 ## Project state
 - Phase 0 complete: full v2 schema, RLS, seed data, design tokens.
-- Phase 1 in progress: async KB ingestion backbone DONE (local + production via Inngest).
-- Next Phase 1 task: multi-source ingestion (file upload + voice note) + source-priority merge.
+- Phase 1 in progress: async KB ingestion backbone DONE (local + production via Inngest), multi-source ingestion (file upload + voice note) + source-priority merge DONE.
+
 
 ## Stack & layout
 - Backend: FastAPI on Render. Code in `backend/app/`. Run: `uvicorn app.main:app` from `backend/`.
@@ -79,3 +79,13 @@ isolation from day one.
 - Single root-level Python venv (`venv`), not per-service.
 - Prefer step-by-step changes with a verification checkpoint before moving on.
 - Phases are dependency-ordered; infrastructure hardening precedes feature work.
+
+## Tenant isolation
+- Endpoints resolve tenant by `slug` passed from the frontend: `/leads?tenant_slug=…`, `/scrape`,
+  `/ingest/file`, `/ingest/voice`, `/brands?activity_id=…`. The frontend gets its slug from the
+  onboarding flow (`POST /onboarding/tenant`).
+- KNOWN GAP — `/webhook` (Retell post-call) still resolves the tenant by a hardcoded `xpleague-frisco`.
+  Correct fix is phone-number → tenant lookup, blocked on per-franchise Twilio number provisioning
+  (the unresolved SIP inbound item). Safe placeholder until telephony-per-tenant exists.
+- TODO (non-urgent): the "look up tenant_id from slug" block repeats across endpoints — extract a
+  `get_tenant_id(slug)` helper when convenient.
