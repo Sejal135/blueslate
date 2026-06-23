@@ -31,3 +31,5 @@ drop trigger if exists trg_credit_ledger_no_mutation on credit_ledger;
 create trigger trg_credit_ledger_no_mutation
   before update or delete on credit_ledger
   for each row execute function prevent_ledger_mutation();
+
+grant select, insert, update, delete on public.credit_ledger to service_role;

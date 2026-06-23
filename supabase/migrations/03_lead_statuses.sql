@@ -20,3 +20,5 @@ create unique index if not exists idx_lead_status_global_key
   on lead_statuses(key) where tenant_id is null;
 create unique index if not exists idx_lead_status_tenant_key
   on lead_statuses(tenant_id, key) where tenant_id is not null;
+
+grant select, insert, update, delete on public.lead_statuses to service_role;

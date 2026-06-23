@@ -48,3 +48,7 @@ create index if not exists idx_activity_log_contact on activity_log(contact_id, 
 -- Forward-link the v1 tables to the new contact entity (nullable, non-breaking).
 alter table leads     add column if not exists contact_id uuid references contacts(id);
 alter table call_logs add column if not exists contact_id uuid references contacts(id);
+
+grant select, insert, update, delete on public.contacts to service_role;
+grant select, insert, update, delete on public.children to service_role;
+grant select, insert, update, delete on public.activity_log to service_role;

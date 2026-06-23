@@ -34,3 +34,7 @@ create table if not exists brands (
 );
 
 create index if not exists idx_brands_activity on brands(activity_id);
+
+grant select, insert, update, delete on public.activities to service_role;
+grant select, insert, update, delete on public.activity_config to service_role;
+grant select, insert, update, delete on public.brands to service_role;
