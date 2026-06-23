@@ -70,6 +70,7 @@ isolation from day one.
   `upsert_source`, `rebuild_kb`, `set_job_status`. (`save_kb` was removed — superseded by upsert + rebuild.)
   
 ## Frontend conventions
+- Onboarding flow lives at frontend/src/app/onboarding/page.tsx, is a single client component holding all step state.
 - Styling is INLINE React style objects (no CSS Modules, no Tailwind).
 - Design tokens: CSS vars in `frontend/src/app/globals.css` (`:root`) + a `tokens.ts` object that
   references them (e.g. `tokens.brandTeal`).
