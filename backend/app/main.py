@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import json
+import re
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from firecrawl import FirecrawlApp
@@ -49,9 +50,14 @@ class ScrapeRequest(BaseModel):
     url: str
     tenant_slug: str
 
+class CreateTenantRequest(BaseModel):
+    activity_id: str
+    brand_id: str
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "project": "blueslate"}
+
 @app.post("/scrape")
 async def scrape_url(request: ScrapeRequest):
     try:
@@ -247,16 +253,61 @@ async def get_kb_job(job_id: str):
         return {"status": "success", "job": res.data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+def _slugify(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return s or "franchise"
+
+# endpoint 1
+@app.get("/activities")
+async def list_activities():
+    try:
+        res = supabase_client.table("activities").select("id, key, name").order("name").execute()
+        return {"status": "success", "activities": res.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# endpoint 2
+@app.get("/brands")
+async def list_brands(activity_id: str):
+    try:
+        res = supabase_client.table("brands") \
+            .select("id, key, name, is_independent") \
+            .eq("activity_id", activity_id) \
+            .order("is_independent") \
+            .order("name") \
+            .execute()
+        return {"status": "success", "brands": res.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# endpoint 3
+@app.post("/onboarding/tenant")
+async def create_tenant(req: CreateTenantRequest):
+    try:
+        brand = supabase_client.table("brands").select("name, key").eq("id", req.brand_id).single().execute()
+        slug = f"{_slugify(brand.data['key'])}-{uuid.uuid4().hex[:6]}"
+        name = f"New {brand.data['name']} franchise"
+
+        res = supabase_client.table("tenants").insert({
+            "slug": slug,
+            "name": name,
+            "activity_id": req.activity_id,
+            "brand_id": req.brand_id,
+        }).execute()
+
+        return {"status": "success", "tenant_id": res.data[0]["id"], "slug": slug, "name": name}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.get("/leads")
-async def get_leads():
+async def get_leads(tenant_slug: str):
     try:
         tenant_response = supabase_client.table("tenants")\
             .select("id")\
-            .eq("slug", "xpleague-frisco")\
+            .eq("slug", tenant_slug)\
             .single()\
             .execute()
-
         tenant_id = tenant_response.data["id"]
 
         leads_response = supabase_client.table("leads")\
@@ -266,13 +317,11 @@ async def get_leads():
             .execute()
 
         return {
-            "status": "success",
-            "leads": leads_response.data
-        }
-
+                "status": "success", 
+                "leads": leads_response.data
+            }
+    
     except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        return {"status": "error", "message": str(e)}
+    
     
