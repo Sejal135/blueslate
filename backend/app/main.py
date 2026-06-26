@@ -29,7 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# for testing inngest
 # Serve Inngest functions at /api/inngest
 inngest.fast_api.serve(app, inngest_client, [test_function, run_kb_ingestion])
 
@@ -45,25 +44,45 @@ supabase_client = create_client(
     os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 )
 
-# Request model
+
+# ---- Helpers ----
+def get_tenant_id(slug: str) -> str:
+    res = supabase_client.table("tenants").select("id").eq("slug", slug).execute()
+    if not res.data:
+        raise ValueError(f"No franchise found for slug '{slug}'")
+    return res.data[0]["id"]
+
+
+def _slugify(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return s or "franchise"
+
+
+# ---- Request models ----
 class ScrapeRequest(BaseModel):
     url: str
     tenant_slug: str
+
 
 class CreateTenantRequest(BaseModel):
     activity_id: str
     brand_id: str
 
+
+class UpdateTenantRequest(BaseModel):
+    activity_id: str
+    brand_id: str
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "project": "blueslate"}
 
+
 @app.post("/scrape")
 async def scrape_url(request: ScrapeRequest):
     try:
-        tenant_response = supabase_client.table("tenants") \
-            .select("id").eq("slug", request.tenant_slug).single().execute()
-        tenant_id = tenant_response.data["id"]
+        tenant_id = get_tenant_id(request.tenant_slug)
 
         job = supabase_client.table("kb_jobs").insert({
             "tenant_id": tenant_id,
@@ -77,10 +96,10 @@ async def scrape_url(request: ScrapeRequest):
         await inngest_client.send(inngest.Event(
             name="kb/ingest.requested",
             data={
-                "job_id": job_id, 
-                "tenant_id": tenant_id, 
-                "source_type": "scrape", 
-                "source_ref": request.url
+                "job_id": job_id,
+                "tenant_id": tenant_id,
+                "source_type": "scrape",
+                "source_ref": request.url,
             },
         ))
 
@@ -89,12 +108,11 @@ async def scrape_url(request: ScrapeRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# to read different types of file uploads and inngest it
+
 @app.post("/ingest/file")
 async def ingest_file(tenant_slug: str = Form(...), file: UploadFile = File(...)):
     try:
-        tenant = supabase_client.table("tenants").select("id").eq("slug", tenant_slug).single().execute()
-        tenant_id = tenant.data["id"]
+        tenant_id = get_tenant_id(tenant_slug)
 
         contents = await file.read()
         safe_name = (file.filename or "upload").replace("/", "_")
@@ -120,13 +138,13 @@ async def ingest_file(tenant_slug: str = Form(...), file: UploadFile = File(...)
         return {"status": "queued", "job_id": job_id}
 
     except Exception as e:
-        return {"status": "error", "message": str(e)}   
+        return {"status": "error", "message": str(e)}
+
 
 @app.post("/ingest/voice")
 async def ingest_voice(tenant_slug: str = Form(...), file: UploadFile = File(...)):
     try:
-        tenant = supabase_client.table("tenants").select("id").eq("slug", tenant_slug).single().execute()
-        tenant_id = tenant.data["id"]
+        tenant_id = get_tenant_id(tenant_slug)
 
         contents = await file.read()
         safe_name = (file.filename or "voice-note").replace("/", "_")
@@ -154,6 +172,7 @@ async def ingest_voice(tenant_slug: str = Form(...), file: UploadFile = File(...
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+
 @app.post("/webhook")
 async def handle_webhook(payload: dict):
     try:
@@ -162,7 +181,6 @@ async def handle_webhook(payload: dict):
         call_object = payload.get("call", {})
         print("TRANSCRIPT RAW:", json.dumps(call_object.get("transcript", "NOT FOUND"), indent=2))
         print("TOP LEVEL TRANSCRIPT:", json.dumps(payload.get("transcript", "NOT FOUND"), indent=2))
-
 
         call_id = call_object.get("call_id", "")
         recording_url = call_object.get("recording_url", "")
@@ -205,14 +223,9 @@ TRANSCRIPT:
 
         lead_data = json.loads(lead_text)
 
-        # Get tenant ID
-        tenant_response = supabase_client.table("tenants")\
-            .select("id")\
-            .eq("slug", "xpleague-frisco")\
-            .single()\
-            .execute()
-
-        tenant_id = tenant_response.data["id"]
+        # NOTE: tenant is hardcoded on purpose. The correct fix is a phone-number -> tenant
+        # lookup, which is blocked on per-franchise Twilio numbers (deferred; see CLAUDE.md).
+        tenant_id = get_tenant_id("xpleague-frisco")
 
         # Save lead to Supabase
         lead_response = supabase_client.table("leads")\
@@ -246,6 +259,7 @@ TRANSCRIPT:
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+
 @app.get("/kb-jobs/{job_id}")
 async def get_kb_job(job_id: str):
     try:
@@ -253,10 +267,7 @@ async def get_kb_job(job_id: str):
         return {"status": "success", "job": res.data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
-    
-def _slugify(text: str) -> str:
-    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return s or "franchise"
+
 
 # endpoint 1
 @app.get("/activities")
@@ -266,6 +277,7 @@ async def list_activities():
         return {"status": "success", "activities": res.data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
 
 # endpoint 2
 @app.get("/brands")
@@ -281,7 +293,8 @@ async def list_brands(activity_id: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# endpoint 3
+
+# endpoint 3 — create a fresh franchise (called once per onboarding session)
 @app.post("/onboarding/tenant")
 async def create_tenant(req: CreateTenantRequest):
     try:
@@ -300,15 +313,25 @@ async def create_tenant(req: CreateTenantRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+
+# endpoint 4 — update the franchise created this session (when the owner edits earlier steps)
+@app.patch("/onboarding/tenant/{slug}")
+async def update_tenant(slug: str, req: UpdateTenantRequest):
+    try:
+        tenant_id = get_tenant_id(slug)
+        supabase_client.table("tenants").update({
+            "activity_id": req.activity_id,
+            "brand_id": req.brand_id,
+        }).eq("id", tenant_id).execute()
+        return {"status": "success", "tenant_id": tenant_id, "slug": slug}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.get("/leads")
 async def get_leads(tenant_slug: str):
     try:
-        tenant_response = supabase_client.table("tenants")\
-            .select("id")\
-            .eq("slug", tenant_slug)\
-            .single()\
-            .execute()
-        tenant_id = tenant_response.data["id"]
+        tenant_id = get_tenant_id(tenant_slug)
 
         leads_response = supabase_client.table("leads")\
             .select("*")\
@@ -316,11 +339,8 @@ async def get_leads(tenant_slug: str):
             .order("call_timestamp", desc=True)\
             .execute()
 
-        return {
-                "status": "success", 
-                "leads": leads_response.data
-            }
-    
+        return {"status": "success", "leads": leads_response.data}
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
     
