@@ -179,6 +179,11 @@ def rebuild_kb(tenant_id: str) -> dict:
         "is_active": True,
     }).execute()
 
+    # Replace the "New X franchise" placeholder with the real extracted business name.
+    business_name = merged.get("business_name")
+    if business_name:
+        supabase_client.table("tenants").update({"name": business_name}).eq("id", tenant_id).execute()
+
     return merged
 
 # downloads the file from the supabase storage bucket and pulls text out, same 8000-char cap as the scrape
