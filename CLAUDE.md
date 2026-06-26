@@ -88,5 +88,6 @@ isolation from day one.
 - KNOWN GAP — `/webhook` (Retell post-call) still resolves the tenant by a hardcoded `xpleague-frisco`.
   Correct fix is phone-number → tenant lookup, blocked on per-franchise Twilio number provisioning
   (the unresolved SIP inbound item). Safe placeholder until telephony-per-tenant exists.
+  Corrupt/scanned PDFs fail the parse step with a raw error; acceptable for now but the UI does not show failed or a friendlier parse-level guard would help.
 - TODO (non-urgent): the "look up tenant_id from slug" block repeats across endpoints — extract a
   `get_tenant_id(slug)` helper when convenient.
