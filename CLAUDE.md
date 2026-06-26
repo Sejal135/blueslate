@@ -8,7 +8,7 @@ isolation from day one.
 
 ## Project state
 - Phase 0 complete: full v2 schema, RLS, seed data, design tokens.
-- Phase 1 in progress: async KB ingestion backbone DONE (local + production via Inngest), multi-source ingestion (file upload + voice note) + source-priority merge DONE.
+- Phase 1 in progress: onboarding step 3 ingests via three in-UI sources that poll kb_jobs and gate Continue on kbReady; voice uses in-browser MediaRecorder → .webm → /ingest/voice. 
 
 
 ## Stack & layout
