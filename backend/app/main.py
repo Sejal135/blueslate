@@ -1,10 +1,11 @@
-from fastapi import FastAPI, UploadFile, File, Form
-import uuid
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import os
 import json
 import re
+import uuid
+import httpx
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from firecrawl import FirecrawlApp
@@ -44,6 +45,8 @@ supabase_client = create_client(
     os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 )
 
+# Initialize Retell
+RETELL_API_KEY = os.getenv("RETELL_API_KEY")
 
 # ---- Helpers ----
 def get_tenant_id(slug: str) -> str:
@@ -73,6 +76,8 @@ class UpdateTenantRequest(BaseModel):
     activity_id: str
     brand_id: str
 
+class VoiceRequest(BaseModel):
+    voice_id: str
 
 @app.get("/health")
 def health_check():
@@ -324,6 +329,38 @@ async def update_tenant(slug: str, req: UpdateTenantRequest):
             "brand_id": req.brand_id,
         }).eq("id", tenant_id).execute()
         return {"status": "success", "tenant_id": tenant_id, "slug": slug}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# Live list of Retell voices for the picker (includes a preview audio URL per voice).
+@app.get("/voices")
+async def list_voices():
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                "https://api.retellai.com/list-voices",
+                headers={"Authorization": f"Bearer {RETELL_API_KEY}"},
+            )
+        r.raise_for_status()
+        voices = r.json()
+        picked = [
+            {"voice_id": v["voice_id"], "voice_name": v.get("voice_name", v["voice_id"]),
+             "preview_audio_url": v.get("preview_audio_url")}
+            for v in voices[:6]
+        ]
+        return {"status": "success", "voices": picked}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# Save the owner's chosen voice onto their tenant.
+@app.patch("/onboarding/tenant/{slug}/voice")
+async def set_voice(slug: str, req: VoiceRequest):
+    try:
+        tenant_id = get_tenant_id(slug)
+        supabase_client.table("tenants").update({"voice_id": req.voice_id}).eq("id", tenant_id).execute()
+        return {"status": "success", "voice_id": req.voice_id}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

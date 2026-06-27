@@ -30,6 +30,7 @@ export default function Onboarding() {
     step === 1 ? !!data.activityId :
     step === 2 ? !!data.brandId :
     step === 3 ? data.kbReady :
+    step === 4 ? !!data.voiceId :
     true;
 
   const handleContinue = async () => {
@@ -55,6 +56,26 @@ export default function Onboarding() {
         } else {
           setNavError(json.message || "Could not save your franchise.");
         }
+      } catch {
+        setNavError("Could not reach the server.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    // Step 4 → save the chosen voice before advancing.
+    if (step === 4) {
+      setBusy(true);
+      try {
+        const res = await fetch(`${API}/onboarding/tenant/${data.tenantSlug}/voice`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ voice_id: data.voiceId }),
+        });
+        const json = await res.json();
+        if (json.status === "success") setStep(5);
+        else setNavError(json.message || "Could not save your voice.");
       } catch {
         setNavError("Could not reach the server.");
       } finally {
@@ -89,7 +110,7 @@ export default function Onboarding() {
         {step === 1 && <Step1Activity data={data} update={update} />}
         {step === 2 && <Step2Brand data={data} update={update} />}
         {step === 3 && <Step3Ingestion data={data} update={update} />}
-        {step === 4 && <Placeholder title="Step 4 — Choose your agent's voice" />}
+        {step === 4 && <Step4Voice data={data} update={update} />}
         {step === 5 && <Placeholder title="Step 5 — Hear your agent" />}
       </div>
 
@@ -114,7 +135,7 @@ export default function Onboarding() {
               fontSize: 15, fontWeight: 600, cursor: canContinue && !busy ? "pointer" : "default",
             }}
           >
-            {busy && step === 2 ? "Saving…" : "Continue"}
+            {busy ? "Saving…" : "Continue"}
           </button>
         </div>
       </div>
@@ -344,6 +365,77 @@ function Step3Ingestion({ data, update }: { data: OnboardingData; update: (p: Pa
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function Step4Voice({ data, update }: { data: OnboardingData; update: (p: Partial<OnboardingData>) => void }) {
+  const [voices, setVoices] = useState<{ voice_id: string; voice_name: string; preview_audio_url?: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API}/voices`);
+        const json = await res.json();
+        if (json.status === "success") {
+          setVoices(json.voices);
+          // Pre-select the first voice so Continue is enabled by default.
+          if (json.voices[0] && !data.voiceId) update({ voiceId: json.voices[0].voice_id });
+        } else setError(json.message || "Could not load voices");
+      } catch {
+        setError("Could not reach the server.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // Play a voice's preview sample, stopping any currently playing one.
+  function playSample(url?: string) {
+    if (!url) return;
+    if (audioRef.current) audioRef.current.pause();
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    audio.play().catch(() => {});
+  }
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 28, fontWeight: 600, margin: "8px 0 4px" }}>Choose your agent's voice</h1>
+      <p style={{ color: tokens.textSecondary, marginTop: 0 }}>Tap Play to hear a sample, then pick the one that fits your brand.</p>
+
+      {loading && <p style={{ color: tokens.textMuted }}>Loading…</p>}
+      {error && <p style={{ color: tokens.brandCoral }}>{error}</p>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+        {voices.map((v) => {
+          const selected = data.voiceId === v.voice_id;
+          return (
+            <div
+              key={v.voice_id}
+              onClick={() => update({ voiceId: v.voice_id })}
+              style={{
+                cursor: "pointer",
+                background: selected ? "rgba(14,169,139,0.08)" : tokens.surfaceBase,
+                border: `2px solid ${selected ? tokens.brandTeal : tokens.borderDefault}`,
+                borderRadius: 12, padding: "14px 18px",
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}
+            >
+              <span style={{ fontSize: 16, fontWeight: 600, color: tokens.textPrimary }}>{v.voice_name}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); playSample(v.preview_audio_url); }}
+                style={{ background: tokens.brandSlate, color: "#fff", border: "none", borderRadius: 20, padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+              >
+                ▶ Play
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
