@@ -48,6 +48,9 @@ supabase_client = create_client(
 # Initialize Retell
 RETELL_API_KEY = os.getenv("RETELL_API_KEY")
 
+# Twilio free shared number as a constant
+RETELL_FROM_NUMBER = os.getenv("RETELL_FROM_NUMBER", "+18664851671")
+
 # ---- Helpers ----
 def get_tenant_id(slug: str) -> str:
     res = supabase_client.table("tenants").select("id").eq("slug", slug).execute()
@@ -59,6 +62,32 @@ def get_tenant_id(slug: str) -> str:
 def _slugify(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return s or "franchise"
+
+# Turns the merged KB JSON into readable text for the agent
+def format_kb_for_agent(kb: dict) -> str:
+    if not kb:
+        return "No information available yet."
+    lines = []
+    if kb.get("business_name"): lines.append(f"Business name: {kb['business_name']}")
+    if kb.get("location"): lines.append(f"Location: {kb['location']}")
+    if kb.get("age_range"): lines.append(f"Ages served: {kb['age_range']}")
+    if kb.get("phone"): lines.append(f"Phone: {kb['phone']}")
+    if kb.get("games_offered"): lines.append("Games/activities: " + ", ".join(kb["games_offered"]))
+    for p in (kb.get("programs") or []):
+        bits = [p.get("name", "")]
+        if p.get("price"): bits.append(f"price {p['price']}")
+        if p.get("schedule"): bits.append(p["schedule"])
+        if p.get("description"): bits.append(p["description"])
+        lines.append("Program: " + " | ".join(b for b in bits if b))
+    if kb.get("trial_info"): lines.append(f"Free trial: {kb['trial_info']}")
+    for pp in (kb.get("birthday_parties") or []):
+        bits = [pp.get("package_name", "")]
+        if pp.get("price"): bits.append(f"price {pp['price']}")
+        if pp.get("details"): bits.append(pp["details"])
+        lines.append("Birthday party: " + " | ".join(b for b in bits if b))
+    if kb.get("mission"): lines.append(f"Mission: {kb['mission']}")
+    if kb.get("additional_info"): lines.append(f"Other: {kb['additional_info']}")
+    return "\n".join(lines) if lines else "No information available yet."
 
 
 # ---- Request models ----
@@ -78,6 +107,10 @@ class UpdateTenantRequest(BaseModel):
 
 class VoiceRequest(BaseModel):
     voice_id: str
+
+class CallRequest(BaseModel):
+    tenant_slug: str
+    to_number: str
 
 @app.get("/health")
 def health_check():
@@ -361,6 +394,48 @@ async def set_voice(slug: str, req: VoiceRequest):
         tenant_id = get_tenant_id(slug)
         supabase_client.table("tenants").update({"voice_id": req.voice_id}).eq("id", tenant_id).execute()
         return {"status": "success", "voice_id": req.voice_id}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# Places an outbound "call me now" — injects THIS tenant's KB + voice into the shared agent.
+@app.post("/onboarding/call")
+async def make_call(req: CallRequest):
+    try:
+        tenant_id = get_tenant_id(req.tenant_slug)
+
+        tenant = supabase_client.table("tenants").select("name, voice_id").eq("id", tenant_id).single().execute()
+        business_name = tenant.data.get("name") or "our program"
+        voice_id = tenant.data.get("voice_id")
+
+        kb_rows = supabase_client.table("knowledge_base").select("structured_data") \
+            .eq("tenant_id", tenant_id).eq("is_active", True).limit(1).execute()
+        kb = kb_rows.data[0]["structured_data"] if kb_rows.data else {}
+        knowledge = format_kb_for_agent(kb)
+
+        payload = {
+            "from_number": RETELL_FROM_NUMBER,
+            "to_number": req.to_number,
+            "retell_llm_dynamic_variables": {
+                "business_name": business_name,
+                "knowledge": knowledge,
+            },
+        }
+        # Override the voice per call with the one the owner chose in step 4.
+        if voice_id:
+            payload["agent_override"] = {"agent": {"voice_id": voice_id}}
+
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(
+                "https://api.retellai.com/v2/create-phone-call",
+                headers={"Authorization": f"Bearer {RETELL_API_KEY}", "Content-Type": "application/json"},
+                json=payload,
+            )
+        if r.status_code >= 400:
+            return {"status": "error", "message": f"Retell {r.status_code}: {r.text}"}
+        data = r.json()
+        return {"status": "success", "call_id": data.get("call_id"), "call_status": data.get("call_status")}
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

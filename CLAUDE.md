@@ -9,6 +9,7 @@ isolation from day one.
 ## Project state
 - Phase 0 complete: full v2 schema, RLS, seed data, design tokens.
 - Phase 1 in progress: onboarding step 3 ingests via three in-UI sources that poll kb_jobs and gate Continue on kbReady; voice uses in-browser MediaRecorder → .webm → /ingest/voice. 
+- Done: Phase 1 finish with onboarding is complete — all 5 steps live, step 5 places a real outbound call via /onboarding/call.
 
 
 ## Stack & layout
@@ -89,5 +90,7 @@ isolation from day one.
   Correct fix is phone-number → tenant lookup, blocked on per-franchise Twilio number provisioning
   (the unresolved SIP inbound item). Safe placeholder until telephony-per-tenant exists.
   Corrupt/scanned PDFs fail the parse step with a raw error; acceptable for now but the UI does not show failed or a friendlier parse-level guard would help.
+  Need to improve the agent message as it currently it indicated the wrong date.
 - TODO (non-urgent): the "look up tenant_id from slug" block repeats across endpoints — extract a
   `get_tenant_id(slug)` helper when convenient.
+

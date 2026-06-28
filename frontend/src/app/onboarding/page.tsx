@@ -111,7 +111,7 @@ export default function Onboarding() {
         {step === 2 && <Step2Brand data={data} update={update} />}
         {step === 3 && <Step3Ingestion data={data} update={update} />}
         {step === 4 && <Step4Voice data={data} update={update} />}
-        {step === 5 && <Placeholder title="Step 5 — Hear your agent" />}
+        {step === 5 && <Step5Call data={data} />}
       </div>
 
       {/* Nav */}
@@ -125,18 +125,20 @@ export default function Onboarding() {
           >
             ← Back
           </button>
-          <button
-            onClick={handleContinue}
-            disabled={!canContinue || busy}
-            style={{
-              background: canContinue && !busy ? tokens.brandTeal : tokens.borderDefault,
-              color: canContinue && !busy ? "#fff" : tokens.textMuted,
-              border: "none", borderRadius: 8, padding: "12px 28px",
-              fontSize: 15, fontWeight: 600, cursor: canContinue && !busy ? "pointer" : "default",
-            }}
-          >
-            {busy ? "Saving…" : "Continue"}
-          </button>
+          {step < STEPS.length && (
+            <button
+              onClick={handleContinue}
+              disabled={!canContinue || busy}
+              style={{
+                background: canContinue && !busy ? tokens.brandTeal : tokens.borderDefault,
+                color: canContinue && !busy ? "#fff" : tokens.textMuted,
+                border: "none", borderRadius: 8, padding: "12px 28px",
+                fontSize: 15, fontWeight: 600, cursor: canContinue && !busy ? "pointer" : "default",
+              }}
+            >
+              {busy ? "Saving…" : "Continue"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -440,6 +442,80 @@ function Step4Voice({ data, update }: { data: OnboardingData; update: (p: Partia
   );
 }
 
+function Step5Call({ data }: { data: OnboardingData }) {
+  const [phone, setPhone] = useState("");
+  const [state, setState] = useState<"idle" | "calling" | "ringing" | "error">("idle");
+  const [error, setError] = useState("");
+
+  // Light-touch E.164 normalize: digits only, assume US if 10 digits.
+  function toE164(raw: string): string | null {
+    const digits = raw.replace(/[^\d]/g, "");
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    if (raw.trim().startsWith("+")) return raw.trim();
+    return null;
+  }
+
+  async function callMe() {
+    const to = toE164(phone);
+    if (!to) { setError("Enter a valid US mobile number."); setState("error"); return; }
+    setError(""); setState("calling");
+    try {
+      const res = await fetch(`${API}/onboarding/call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_slug: data.tenantSlug, to_number: to }),
+      });
+      const json = await res.json();
+      if (json.status === "success") setState("ringing");
+      else { setError(json.message || "Call failed."); setState("error"); }
+    } catch {
+      setError("Couldn't reach the server."); setState("error");
+    }
+  }
+
+  if (state === "ringing") {
+    return (
+      <div style={{ background: tokens.surfaceBase, border: `1px solid ${tokens.borderDefault}`, borderRadius: 12, padding: 40, textAlign: "center" }}>
+        <div style={{ fontSize: 40 }}>📞</div>
+        <h1 style={{ fontSize: 24, fontWeight: 600, margin: "12px 0 4px" }}>Calling you now…</h1>
+        <p style={{ color: tokens.textSecondary, margin: 0 }}>
+          Your phone should ring in a few seconds. Pick up and meet your AI receptionist — it knows everything you just taught it.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 28, fontWeight: 600, margin: "8px 0 4px" }}>Hear your agent</h1>
+      <p style={{ color: tokens.textSecondary, marginTop: 0 }}>
+        Enter your mobile number and we'll call you right now — so you can hear exactly what your callers will.
+      </p>
+
+      <div style={{ background: tokens.surfaceBase, border: `1px solid ${tokens.borderDefault}`, borderRadius: 12, padding: 20, marginTop: 12 }}>
+        <label style={{ fontSize: 14, fontWeight: 600, color: tokens.textPrimary, marginBottom: 8, display: "block" }}>Your mobile number</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="(555) 123-4567"
+            style={{ flex: 1, padding: "10px 12px", border: `1px solid ${tokens.borderDefault}`, borderRadius: 8, fontSize: 14, fontFamily: tokens.fontSans }}
+          />
+          <button
+            onClick={callMe}
+            disabled={state === "calling" || !phone.trim()}
+            style={{ background: tokens.brandTeal, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 600, cursor: "pointer", opacity: state === "calling" || !phone.trim() ? 0.5 : 1 }}
+          >
+            {state === "calling" ? "Calling…" : "Call me now"}
+          </button>
+        </div>
+        {error && <p style={{ color: tokens.brandCoral, fontSize: 13, marginBottom: 0 }}>{error}</p>}
+      </div>
+    </div>
+  );
+}
+
 // Records a voice note in-browser via MediaRecorder and uploads it to /ingest/voice.
 // onJob hands the returned job id back to Step3Ingestion so it polls in the same list.
 function VoiceRecorder({ tenantSlug, onJob }: { tenantSlug: string; onJob: (id: string, label: string) => void }) {
@@ -534,12 +610,3 @@ function VoiceRecorder({ tenantSlug, onJob }: { tenantSlug: string; onJob: (id: 
   );
 }
 
-
-function Placeholder({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <div style={{ background: tokens.surfaceBase, border: `1px solid ${tokens.borderDefault}`, borderRadius: 12, padding: 40, textAlign: "center" }}>
-      <p style={{ fontSize: 18, fontWeight: 600, color: tokens.textPrimary, margin: 0 }}>{title}</p>
-      <p style={{ color: tokens.textMuted, marginBottom: 0 }}>{subtitle || "Coming in the next stage."}</p>
-    </div>
-  );
-}
