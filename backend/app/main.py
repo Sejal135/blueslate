@@ -261,9 +261,14 @@ TRANSCRIPT:
 
         lead_data = json.loads(lead_text)
 
-        # NOTE: tenant is hardcoded on purpose. The correct fix is a phone-number -> tenant
-        # lookup, which is blocked on per-franchise Twilio numbers (deferred; see CLAUDE.md).
-        tenant_id = get_tenant_id("xpleague-frisco")
+        # Resolve the tenant this call belonged to.
+        # Outbound calls ("call me now") carry tenant_slug in metadata, set at call-creation time.
+        # Inbound calls (XP League's shared number) have no metadata, so they fall back to the
+        # pilot — correct for now since XP League is the only inbound tenant. When each franchise
+        # gets its own number, this fallback becomes a dialed-number -> tenant lookup.
+        metadata = call_object.get("metadata") or {}
+        tenant_slug = metadata.get("tenant_slug", "xpleague-frisco")
+        tenant_id = get_tenant_id(tenant_slug)
 
         # Save lead to Supabase
         lead_response = supabase_client.table("leads")\
@@ -416,6 +421,7 @@ async def make_call(req: CallRequest):
         payload = {
             "from_number": RETELL_FROM_NUMBER,
             "to_number": req.to_number,
+            "metadata": {"tenant_slug": req.tenant_slug},
             "retell_llm_dynamic_variables": {
                 "business_name": business_name,
                 "knowledge": knowledge,
