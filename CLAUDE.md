@@ -86,7 +86,7 @@ isolation from day one.
 - Endpoints resolve tenant by `slug` passed from the frontend: `/leads?tenant_slug=…`, `/scrape`,
   `/ingest/file`, `/ingest/voice`, `/brands?activity_id=…`. The frontend gets its slug from the
   onboarding flow (`POST /onboarding/tenant`).
-- KNOWN GAP — `/webhook` (Retell post-call) still resolves the tenant by a hardcoded `xpleague-frisco`.
+- KNOWN GAP — `/webhook` it resolves tenant from call.metadata.tenant_slug (outbound). falls back to pilot for inbound for tenant_slug in main.py, for inbound it is hardcoded `xpleague-frisco`.
   Correct fix is phone-number → tenant lookup, blocked on per-franchise Twilio number provisioning
   (the unresolved SIP inbound item). Safe placeholder until telephony-per-tenant exists.
   Corrupt/scanned PDFs fail the parse step with a raw error; acceptable for now but the UI does not show failed or a friendlier parse-level guard would help.
