@@ -114,6 +114,37 @@ def resolve_contact(tenant_id: str, phone: str, caller_name: str) -> str:
     }).execute()
     return created.data[0]["id"]
 
+# Find-or-create a child under a contact (upsert by contact_id + name).
+# Same kid mentioned across calls reuses one row instead of duplicating.
+def resolve_child(tenant_id: str, contact_id: str, child_name: str, child_age, program_interest: str):
+    if not child_name or child_name == "Unknown":
+        return  # nothing to attach
+
+    # Coerce age to int or None — the model usually sends a number, but be defensive.
+    try:
+        age = int(child_age)
+    except (TypeError, ValueError):
+        age = None
+
+    # Look up existing child by natural key (contact + name).
+    found = supabase_client.table("children").select("id") \
+        .eq("contact_id", contact_id).eq("name", child_name).limit(1).execute()
+    if found.data:
+        # Update age/interest if we learned them this call.
+        supabase_client.table("children").update({
+            "age": age, "program_interest": program_interest,
+        }).eq("id", found.data[0]["id"]).execute()
+        return
+
+    # None found → create.
+    supabase_client.table("children").insert({
+        "tenant_id": tenant_id,
+        "contact_id": contact_id,
+        "name": child_name,
+        "age": age,
+        "program_interest": program_interest,
+    }).execute()
+
 
 # ---- Request models ----
 class ScrapeRequest(BaseModel):
@@ -305,6 +336,13 @@ TRANSCRIPT:
             lead_data.get("caller_name", "Unknown"),
         )
 
+        resolve_child(
+            tenant_id,
+            contact_id,
+            lead_data.get("child_name", "Unknown"),
+            lead_data.get("child_age"),
+            lead_data.get("core_interest", ""),
+        )
 
         # Save lead to Supabase
         lead_response = supabase_client.table("leads")\
