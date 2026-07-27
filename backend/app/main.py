@@ -263,6 +263,8 @@ Return ONLY a valid JSON object with exactly these fields, no explanation, no ma
 {{
   "caller_name": "string or Unknown if not mentioned",
   "phone_number": "string or Unknown if not mentioned",
+  "child_name": "string or Unknown if not mentioned",
+  "child_age": "number or null if not mentioned",
   "core_interest": "string - what they were interested in",
   "call_outcome": "string - one of: booked_trial, callback_requested, not_interested, general_inquiry"
 }}
@@ -285,6 +287,8 @@ TRANSCRIPT:
                 lead_text = lead_text[4:]
 
         lead_data = json.loads(lead_text)
+        # DEBUG LINE
+        print("PARSED LEAD:", json.dumps(lead_data, indent=2))
 
         # Resolve the tenant this call belonged to.
         # Outbound calls ("call me now") carry tenant_slug in metadata, set at call-creation time.
