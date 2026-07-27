@@ -89,6 +89,31 @@ def format_kb_for_agent(kb: dict) -> str:
     if kb.get("additional_info"): lines.append(f"Other: {kb['additional_info']}")
     return "\n".join(lines) if lines else "No information available yet."
 
+# Find-or-create a contact by phone within a tenant (upsert by natural key).
+# Same person calling twice reuses one contact instead of duplicating.
+def resolve_contact(tenant_id: str, phone: str, caller_name: str) -> str:
+    # Split "First Last" loosely; keep it simple.
+    parts = (caller_name or "").strip().split(" ", 1)
+    first = parts[0] if parts and parts[0] else "Unknown"
+    last = parts[1] if len(parts) > 1 else ""
+
+    # 1. Look up existing contact by the natural key (tenant + phone).
+    if phone and phone != "Unknown":
+        found = supabase_client.table("contacts").select("id") \
+            .eq("tenant_id", tenant_id).eq("phone", phone).limit(1).execute()
+        if found.data:
+            return found.data[0]["id"]
+
+    # 2. None found → create one.
+    created = supabase_client.table("contacts").insert({
+        "tenant_id": tenant_id,
+        "first_name": first,
+        "last_name": last,
+        "phone": phone if phone != "Unknown" else None,
+        "source": "inbound_call",
+    }).execute()
+    return created.data[0]["id"]
+
 
 # ---- Request models ----
 class ScrapeRequest(BaseModel):
@@ -269,6 +294,13 @@ TRANSCRIPT:
         metadata = call_object.get("metadata") or {}
         tenant_slug = metadata.get("tenant_slug", "xpleague-frisco")
         tenant_id = get_tenant_id(tenant_slug)
+        # Resolve the caller to a contact (find-or-create by phone), then link the lead to it.
+        contact_id = resolve_contact(
+            tenant_id,
+            lead_data.get("phone_number", "Unknown"),
+            lead_data.get("caller_name", "Unknown"),
+        )
+
 
         # Save lead to Supabase
         lead_response = supabase_client.table("leads")\
@@ -280,6 +312,7 @@ TRANSCRIPT:
                 "call_outcome": lead_data.get("call_outcome", "general_inquiry"),
                 "raw_transcript": transcript_text,
                 "call_duration_seconds": duration,
+                "contact_id": contact_id,
                 "call_timestamp": datetime.now(timezone.utc).isoformat()
             })\
             .execute()
