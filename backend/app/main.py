@@ -89,27 +89,35 @@ def format_kb_for_agent(kb: dict) -> str:
     if kb.get("additional_info"): lines.append(f"Other: {kb['additional_info']}")
     return "\n".join(lines) if lines else "No information available yet."
 
+# Canonicalize a phone to E.164-ish digits so the same number always matches.
+def normalize_phone(raw: str) -> str | None:
+    if not raw or raw == "Unknown":
+        return None
+    digits = re.sub(r"[^\d]", "", raw)      # strip everything but digits
+    if len(digits) == 10:
+        return f"+1{digits}"                 # assume US
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    return f"+{digits}" if digits else None
+
 # Find-or-create a contact by phone within a tenant (upsert by natural key).
 # Same person calling twice reuses one contact instead of duplicating.
 def resolve_contact(tenant_id: str, phone: str, caller_name: str) -> str:
-    # Split "First Last" loosely; keep it simple.
+    phone = normalize_phone(phone)   # <-- canonical form, matches regardless of input format
     parts = (caller_name or "").strip().split(" ", 1)
     first = parts[0] if parts and parts[0] else "Unknown"
     last = parts[1] if len(parts) > 1 else ""
 
-    # 1. Look up existing contact by the natural key (tenant + phone).
-    if phone and phone != "Unknown":
+    if phone:
         found = supabase_client.table("contacts").select("id") \
             .eq("tenant_id", tenant_id).eq("phone", phone).limit(1).execute()
         if found.data:
             return found.data[0]["id"]
 
-    # 2. None found → create one.
     created = supabase_client.table("contacts").insert({
         "tenant_id": tenant_id,
-        "first_name": first,
-        "last_name": last,
-        "phone": phone if phone != "Unknown" else None,
+        "first_name": first, "last_name": last,
+        "phone": phone,     # store canonical
         "source": "inbound_call",
     }).execute()
     return created.data[0]["id"]
