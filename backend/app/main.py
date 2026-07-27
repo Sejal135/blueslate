@@ -93,12 +93,12 @@ def format_kb_for_agent(kb: dict) -> str:
 def normalize_phone(raw: str) -> str | None:
     if not raw or raw == "Unknown":
         return None
-    digits = re.sub(r"[^\d]", "", raw)      # strip everything but digits
+    digits = re.sub(r"[^\d]", "", raw)
     if len(digits) == 10:
-        return f"+1{digits}"                 # assume US
+        return f"+1{digits}"
     if len(digits) == 11 and digits.startswith("1"):
         return f"+{digits}"
-    return f"+{digits}" if digits else None
+    return None      # anything else is unreliable — don't fabricate an E.164
 
 # Find-or-create a contact by phone within a tenant (upsert by natural key).
 # Same person calling twice reuses one contact instead of duplicating.
