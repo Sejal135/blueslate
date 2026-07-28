@@ -188,6 +188,27 @@ def apply_status(tenant_id: str, contact_id: str, call_outcome: str):
 
     supabase_client.table("contacts").update({"lead_status_id": target_id}) \
         .eq("id", contact_id).execute()
+    
+# The default lead-status pipeline every tenant starts with.
+DEFAULT_LEAD_STATUSES = [
+    ("new_lead",         "New lead",         "#1A6CF0", True,  1),
+    ("needs_callback",   "Needs callback",   "#F5A623", True,  2),
+    ("trial_booked",     "Trial booked",     "#0EA98B", True,  3),
+    ("not_interested",   "Not interested",   "#94A3B8", True,  4),
+    ("do_not_contact",   "Do not contact",   "#EF4444", True,  5),
+    ("voicemail_left",   "Voicemail left",   "#64748B", False, 10),
+    ("no_answer",        "No answer",        "#64748B", False, 11),
+    ("lapsed",           "Lapsed",           "#64748B", False, 12),
+]
+
+# Seed a tenant's lead-status pipeline. Called once at tenant creation.
+def seed_lead_statuses(tenant_id: str):
+    rows = [
+        {"tenant_id": tenant_id, "key": k, "label": lbl, "color": clr,
+         "is_visible": vis, "is_system": not vis, "sort_order": so}
+        for (k, lbl, clr, vis, so) in DEFAULT_LEAD_STATUSES
+    ]
+    supabase_client.table("lead_statuses").insert(rows).execute()
 
 # ---- Request models ----
 class ScrapeRequest(BaseModel):
@@ -471,6 +492,8 @@ async def create_tenant(req: CreateTenantRequest):
             "activity_id": req.activity_id,
             "brand_id": req.brand_id,
         }).execute()
+
+        seed_lead_statuses(res.data[0]["id"])
 
         return {"status": "success", "tenant_id": res.data[0]["id"], "slug": slug, "name": name}
     except Exception as e:
