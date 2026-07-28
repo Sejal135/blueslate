@@ -154,6 +154,41 @@ def resolve_child(tenant_id: str, contact_id: str, child_name: str, child_age, p
     }).execute()
 
 
+# Maps what extraction returns → your lead_statuses keys.
+OUTCOME_TO_STATUS = {
+    "booked_trial": "trial_booked",
+    "callback_requested": "needs_callback",
+    "not_interested": "not_interested",
+    "general_inquiry": "new_lead",
+}
+
+# Set a contact's status, advance-only: never move backward in the pipeline.
+def apply_status(tenant_id: str, contact_id: str, call_outcome: str):
+    status_key = OUTCOME_TO_STATUS.get(call_outcome, "new_lead")
+
+    # Look up the target status row (need its id + sort_order) for this tenant.
+    target = supabase_client.table("lead_statuses").select("id, sort_order") \
+        .eq("tenant_id", tenant_id).eq("key", status_key).limit(1).execute()
+    if not target.data:
+        return  # status not seeded for this tenant — skip
+    target_id = target.data[0]["id"]
+    target_sort = target.data[0]["sort_order"]
+
+    # Read the contact's current status to compare positions.
+    contact = supabase_client.table("contacts").select("lead_status_id") \
+        .eq("id", contact_id).single().execute()
+    current_id = contact.data.get("lead_status_id")
+
+    # If they already have a status, only advance (new sort_order must be higher).
+    if current_id:
+        current = supabase_client.table("lead_statuses").select("sort_order") \
+            .eq("id", current_id).single().execute()
+        if current.data and target_sort <= current.data["sort_order"]:
+            return  # same or earlier stage → don't move backward
+
+    supabase_client.table("contacts").update({"lead_status_id": target_id}) \
+        .eq("id", contact_id).execute()
+
 # ---- Request models ----
 class ScrapeRequest(BaseModel):
     url: str
@@ -351,6 +386,8 @@ TRANSCRIPT:
             lead_data.get("child_age"),
             lead_data.get("core_interest", ""),
         )
+
+        apply_status(tenant_id, contact_id, lead_data.get("call_outcome", "general_inquiry"))
 
         # Save lead to Supabase
         lead_response = supabase_client.table("leads")\
