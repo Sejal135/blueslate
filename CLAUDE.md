@@ -8,8 +8,9 @@ isolation from day one.
 
 ## Project state
 - Phase 0 complete: full v2 schema, RLS, seed data, design tokens.
-- Phase 1 in progress: onboarding step 3 ingests via three in-UI sources that poll kb_jobs and gate Continue on kbReady; voice uses in-browser MediaRecorder → .webm → /ingest/voice. 
-- Done: Phase 1 finish with onboarding is complete — all 5 steps live, step 5 places a real outbound call via /onboarding/call.
+- Phase 1 complete: onboarding is complete — all 5 steps live, step 5 places a real outbound call via /onboarding/call.
+- Done: Phase 2 started. 
+- Contact + child resolution is upsert-by-natural-key (contact by normalized phone, child by contact+name); normalize_phone returns None on anything not a clean US 10/11-digit number rather than fabricating an E.164.
 
 
 ## Stack & layout
