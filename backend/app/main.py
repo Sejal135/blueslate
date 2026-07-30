@@ -210,6 +210,16 @@ def seed_lead_statuses(tenant_id: str):
     ]
     supabase_client.table("lead_statuses").insert(rows).execute()
 
+# Mark a contact Do-Not-Contact (DNC) and set their status to do_not_contact.
+# DNC is an override — it applies regardless of pipeline position (compliance beats advance-only).
+def apply_dnc(tenant_id: str, contact_id: str):
+    dnc = supabase_client.table("lead_statuses").select("id") \
+        .eq("tenant_id", tenant_id).eq("key", "do_not_contact").limit(1).execute()
+    update = {"do_not_contact": True}
+    if dnc.data:
+        update["lead_status_id"] = dnc.data[0]["id"]
+    supabase_client.table("contacts").update(update).eq("id", contact_id).execute()
+
 # ---- Request models ----
 class ScrapeRequest(BaseModel):
     url: str
@@ -361,7 +371,9 @@ Return ONLY a valid JSON object with exactly these fields, no explanation, no ma
   "child_name": "string or Unknown if not mentioned",
   "child_age": "number or null if not mentioned",
   "core_interest": "string - what they were interested in",
-  "call_outcome": "string - one of: booked_trial, callback_requested, not_interested, general_inquiry"
+  "call_outcome": "string - one of: booked_trial, callback_requested, not_interested, general_inquiry",
+  "opted_out": "boolean - true ONLY if the caller explicitly asked to stop being contacted / called / texted (e.g. 'stop calling me', 'take me off your list', 'do not contact me')",
+  "opt_out_phrase": "string - the caller's exact words that signal opt-out, or empty string if none"
 }}
 
 TRANSCRIPT:
@@ -408,7 +420,13 @@ TRANSCRIPT:
             lead_data.get("core_interest", ""),
         )
 
-        apply_status(tenant_id, contact_id, lead_data.get("call_outcome", "general_inquiry"))
+        # Opt-out is an override: if the caller asked to stop contact, mark DNC and skip
+        # normal status advancement. Otherwise apply the usual advance-only status.
+        if lead_data.get("opted_out"):
+            apply_dnc(tenant_id, contact_id)
+            print(f"OPT-OUT detected: {lead_data.get('opt_out_phrase')}")
+        else:
+            apply_status(tenant_id, contact_id, lead_data.get("call_outcome", "general_inquiry"))
 
         # Save lead to Supabase
         lead_response = supabase_client.table("leads")\
