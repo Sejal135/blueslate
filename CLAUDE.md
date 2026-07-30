@@ -9,6 +9,7 @@ isolation from day one.
 ## Project state
 - Phase 0 complete: full v2 schema, RLS, seed data, design tokens.
 - Phase 1 complete: onboarding is complete — all 5 steps live, step 5 places a real outbound call via /onboarding/call.
+- Phase 2 in progress: (1) create_tenant seeds lead_statuses per tenant; (2) status is advance-only via sort_order, keyed on the contact, mapped from call_outcome.
 - Done: Phase 2 started. 
 - Contact + child resolution is upsert-by-natural-key (contact by normalized phone, child by contact+name); normalize_phone returns None on anything not a clean US 10/11-digit number rather than fabricating an E.164.
 
@@ -92,6 +93,7 @@ isolation from day one.
   (the unresolved SIP inbound item). Safe placeholder until telephony-per-tenant exists.
   Corrupt/scanned PDFs fail the parse step with a raw error; acceptable for now but the UI does not show failed or a friendlier parse-level guard would help.
   Need to improve the agent message as it currently it indicated the wrong date.
+  For contacts/tenants dashboard: Want a way to clean up / soft-delete test tenants. Not now, but note it.
 - TODO (non-urgent): the "look up tenant_id from slug" block repeats across endpoints — extract a
   `get_tenant_id(slug)` helper when convenient.
 
