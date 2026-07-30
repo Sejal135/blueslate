@@ -444,6 +444,22 @@ TRANSCRIPT:
         return {"status": "error", "message": str(e)}
 
 
+@app.get("/leads")
+async def get_leads(tenant_slug: str):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+
+        leads_response = supabase_client.table("leads")\
+            .select("*")\
+            .eq("tenant_id", tenant_id)\
+            .order("call_timestamp", desc=True)\
+            .execute()
+
+        return {"status": "success", "leads": leads_response.data}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.get("/kb-jobs/{job_id}")
 async def get_kb_job(job_id: str):
     try:
@@ -474,6 +490,54 @@ async def list_brands(activity_id: str):
             .order("name") \
             .execute()
         return {"status": "success", "brands": res.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    
+
+# All contacts for a tenant, with their status + children nested in one query.
+@app.get("/contacts")
+async def get_contacts(tenant_slug: str):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+        res = supabase_client.table("contacts") \
+            .select("id, first_name, last_name, phone, email, do_not_contact, created_at, "
+                    "lead_statuses(key, label, color), "
+                    "children(name, age, program_interest)") \
+            .eq("tenant_id", tenant_id) \
+            .order("created_at", desc=True) \
+            .execute()
+        return {"status": "success", "contacts": res.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# List of tenants for the dashboard's tenant picker.
+@app.get("/tenants")
+async def list_tenants():
+    try:
+        res = supabase_client.table("tenants").select("slug, name").order("created_at", desc=True).execute()
+        return {"status": "success", "tenants": res.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    
+
+# Live list of Retell voices for the picker (includes a preview audio URL per voice).
+@app.get("/voices")
+async def list_voices():
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                "https://api.retellai.com/list-voices",
+                headers={"Authorization": f"Bearer {RETELL_API_KEY}"},
+            )
+        r.raise_for_status()
+        voices = r.json()
+        picked = [
+            {"voice_id": v["voice_id"], "voice_name": v.get("voice_name", v["voice_id"]),
+             "preview_audio_url": v.get("preview_audio_url")}
+            for v in voices[:6]
+        ]
+        return {"status": "success", "voices": picked}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -514,25 +578,6 @@ async def update_tenant(slug: str, req: UpdateTenantRequest):
         return {"status": "error", "message": str(e)}
 
 
-# Live list of Retell voices for the picker (includes a preview audio URL per voice).
-@app.get("/voices")
-async def list_voices():
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                "https://api.retellai.com/list-voices",
-                headers={"Authorization": f"Bearer {RETELL_API_KEY}"},
-            )
-        r.raise_for_status()
-        voices = r.json()
-        picked = [
-            {"voice_id": v["voice_id"], "voice_name": v.get("voice_name", v["voice_id"]),
-             "preview_audio_url": v.get("preview_audio_url")}
-            for v in voices[:6]
-        ]
-        return {"status": "success", "voices": picked}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
 
 # Save the owner's chosen voice onto their tenant.
@@ -587,22 +632,4 @@ async def make_call(req: CallRequest):
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
-
-@app.get("/leads")
-async def get_leads(tenant_slug: str):
-    try:
-        tenant_id = get_tenant_id(tenant_slug)
-
-        leads_response = supabase_client.table("leads")\
-            .select("*")\
-            .eq("tenant_id", tenant_id)\
-            .order("call_timestamp", desc=True)\
-            .execute()
-
-        return {"status": "success", "leads": leads_response.data}
-
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-    
     
