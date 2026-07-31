@@ -343,7 +343,14 @@ async def ingest_voice(tenant_slug: str = Form(...), file: UploadFile = File(...
 
 @app.post("/webhook")
 async def handle_webhook(payload: dict):
+
     try:
+        # Retell fires three events per call (started, ended, analyzed). Only process the
+        # final one — it's fired once and carries the full transcript + analysis we need.
+        event = payload.get("event")
+        if event != "call_analyzed":
+            return {"status": "ignored", "event": event}
+
         print("RETELL WEBHOOK PAYLOAD:", json.dumps(payload, indent=2))
 
         call_object = payload.get("call", {})
