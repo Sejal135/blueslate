@@ -358,6 +358,13 @@ async def handle_webhook(payload: dict):
         print("TOP LEVEL TRANSCRIPT:", json.dumps(payload.get("transcript", "NOT FOUND"), indent=2))
 
         call_id = call_object.get("call_id", "")
+        # Retell retries call_analyzed if we don't 2xx within 10s, and our handler is slow
+        # (Groq + DB writes). Dedupe by call_id so a retry doesn't create a second contact.
+        existing = supabase_client.table("call_logs") \
+            .select("id").eq("provider_call_id", call_id).limit(1).execute()
+        if existing.data:
+            return {"status": "duplicate", "call_id": call_id}
+        
         recording_url = call_object.get("recording_url", "")
         duration = call_object.get("call_cost", {}).get("total_duration_seconds", 0)
 
