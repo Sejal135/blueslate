@@ -5,6 +5,7 @@ import re
 import uuid
 import csv
 import httpx
+import resend
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -54,6 +55,9 @@ RETELL_API_KEY = os.getenv("RETELL_API_KEY")
 # Twilio free shared number as a constant
 RETELL_FROM_NUMBER = os.getenv("RETELL_FROM_NUMBER", "+18664851671")
 
+# Initialize Resend
+resend.api_key = os.getenv("RESEND_API_KEY")
+
 # ---- Helpers ----
 def get_tenant_id(slug: str) -> str:
     res = supabase_client.table("tenants").select("id").eq("slug", slug).execute()
@@ -65,6 +69,18 @@ def get_tenant_id(slug: str) -> str:
 def _slugify(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return s or "franchise"
+
+# Post-call email: program info + trial link to a captured parent email.
+def send_post_call_email(business_name: str, to_email: str, child_name: str):
+    kid = f" for {child_name}" if child_name and child_name != "Unknown" else "";
+    html = f"""
+    <div style="font-family:sans-serif">
+      <h2>Thanks for calling {business_name}!</h2>
+      <p>We'd love to see you{kid} at a free trial class.</p>
+      <p><a href="https://example.com/book" style="background:#0EA98B;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none">Book your free trial</a></p>
+    </div>
+    """
+    return send_email(to_email, f"Your free trial at {business_name}", html)
 
 # Turns the merged KB JSON into readable text for the agent
 def format_kb_for_agent(kb: dict) -> str:
@@ -222,6 +238,28 @@ def apply_dnc(tenant_id: str, contact_id: str):
     if dnc.data:
         update["lead_status_id"] = dnc.data[0]["id"]
     supabase_client.table("contacts").update(update).eq("id", contact_id).execute()
+
+
+# Send an email via Resend. Returns True on success.
+def send_email(to: str, subject: str, html: str) -> bool:
+    try:
+        resend.Emails.send({
+            "from": "onboarding@resend.dev",  # test sender; swap for verified domain later
+            "to": to,
+            "subject": subject,
+            "html": html,
+        })
+        return True
+    except Exception as e:
+        print("EMAIL ERROR:", e)
+        return False
+
+
+# Temporary endpoint to confirm email works end-to-end.
+@app.post("/test-email")
+async def test_email(to: str):
+    ok = send_email(to, "Blueslate test", "<p>If you're reading this, Resend works. 🎉</p>")
+    return {"status": "success" if ok else "error"}
 
 # ---- Request models ----
 class ScrapeRequest(BaseModel):
@@ -467,6 +505,7 @@ Return ONLY a valid JSON object with exactly these fields, no explanation, no ma
 {{
   "caller_name": "string or Unknown if not mentioned",
   "phone_number": "string or Unknown if not mentioned",
+  "email": "string or Unknown if not mentioned",
   "child_name": "string or Unknown if not mentioned",
   "child_age": "number or null if not mentioned",
   "core_interest": "string - what they were interested in",
@@ -526,6 +565,12 @@ TRANSCRIPT:
             print(f"OPT-OUT detected: {lead_data.get('opt_out_phrase')}")
         else:
             apply_status(tenant_id, contact_id, lead_data.get("call_outcome", "general_inquiry"))
+
+        email = lead_data.get("email")
+        if email and email != "Unknown":
+            business_name = supabase_client.table("tenants").select("name") \
+                .eq("id", tenant_id).single().execute().data.get("name", "our program")
+            send_post_call_email(business_name, email, lead_data.get("child_name", ""))
 
         # Save lead to Supabase
         lead_response = supabase_client.table("leads")\
