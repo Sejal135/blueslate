@@ -276,6 +276,14 @@ class UpdateTenantRequest(BaseModel):
     activity_id: str
     brand_id: str
 
+
+class CreateCampaignRequest(BaseModel):
+    tenant_slug: str
+    name: str
+    goal: str
+    audience_status_key: str | None = None
+    scheduled_at: str | None = None
+
 class VoiceRequest(BaseModel):
     voice_id: str
 
@@ -665,6 +673,49 @@ async def get_contacts(tenant_slug: str):
             .order("created_at", desc=True) \
             .execute()
         return {"status": "success", "contacts": res.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# Create a draft campaign (audience + goal only — no dialing/scheduling logic yet).
+@app.post("/campaigns")
+async def create_campaign(req: CreateCampaignRequest):
+    try:
+        tenant_id = get_tenant_id(req.tenant_slug)
+
+        res = supabase_client.table("campaigns").insert({
+            "tenant_id": tenant_id,
+            "name": req.name,
+            "goal": req.goal,
+            "audience_status_key": req.audience_status_key,
+            "scheduled_at": req.scheduled_at,
+        }).execute()
+
+        return {"status": "success", "campaign": res.data[0]}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# Audience preview: contacts matching a lead status for this tenant, excluding do_not_contact.
+@app.get("/campaigns/audience")
+async def get_campaign_audience(tenant_slug: str, status_key: str):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+
+        res = supabase_client.table("contacts") \
+            .select("id, first_name, phone, lead_status_id, lead_statuses!inner(key)") \
+            .eq("tenant_id", tenant_id) \
+            .eq("do_not_contact", False) \
+            .eq("lead_statuses.key", status_key) \
+            .not_.is_("phone", "null") \
+            .execute()
+
+        contacts = [
+            {"id": c["id"], "first_name": c["first_name"], "phone": c["phone"], "lead_status_id": c["lead_status_id"]}
+            for c in res.data
+        ]
+
+        return {"status": "success", "count": len(contacts), "contacts": contacts}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
