@@ -678,6 +678,46 @@ async def get_contacts(tenant_slug: str):
         return {"status": "error", "message": str(e)}
 
 
+# Single contact + its call activity. .eq("tenant_id", tenant_id) on the contact
+# lookup enforces isolation — a contact_id from another tenant just 404s via .single().
+@app.get("/contacts/{contact_id}")
+async def get_contact_detail(contact_id: str, tenant_slug: str):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+
+        contact = supabase_client.table("contacts") \
+            .select("id, first_name, last_name, phone, email, do_not_contact, created_at, "
+                    "lead_statuses(key, label, color), "
+                    "children(name, age, program_interest)") \
+            .eq("id", contact_id).eq("tenant_id", tenant_id).single().execute()
+
+        leads = supabase_client.table("leads") \
+            .select("caller_name, core_interest, call_outcome, raw_transcript, call_timestamp") \
+            .eq("contact_id", contact_id).eq("tenant_id", tenant_id) \
+            .order("call_timestamp", desc=True).execute()
+
+        calls = supabase_client.table("call_logs") \
+            .select("status, created_at, provider_call_id") \
+            .eq("contact_id", contact_id).eq("tenant_id", tenant_id) \
+            .order("created_at", desc=True).execute()
+
+        activity = [
+            {"type": "lead", "timestamp": l["call_timestamp"], "caller_name": l["caller_name"],
+             "core_interest": l["core_interest"], "call_outcome": l["call_outcome"],
+             "raw_transcript": l["raw_transcript"]}
+            for l in leads.data
+        ] + [
+            {"type": "call_log", "timestamp": c["created_at"], "status": c["status"],
+             "provider_call_id": c["provider_call_id"]}
+            for c in calls.data
+        ]
+        activity.sort(key=lambda a: a["timestamp"] or "", reverse=True)
+
+        return {"status": "success", "contact": contact.data, "activity": activity}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # TCPA compliance gate: decides whether a contact may be dialed right now.
 # Pure decision logic only — does not place calls. Checks, in order: DNC,
 # calling-hours window (8am-9pm in the tenant's local timezone), and retry limits.

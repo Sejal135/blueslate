@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { tokens } from "../tokens";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
@@ -21,6 +22,7 @@ type Contact = {
 type Tenant = { slug: string; name: string };
 
 export default function ContactsPage() {
+  const router = useRouter();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [slug, setSlug] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -119,7 +121,11 @@ export default function ContactsPage() {
               </thead>
               <tbody>
                 {contacts.map((c) => (
-                  <tr key={c.id}>
+                  <tr
+                    key={c.id}
+                    onClick={() => router.push(`/contacts/${c.id}?tenant_slug=${slug}`)}
+                    style={{ cursor: "pointer" }}
+                  >
                     <td style={td}>
                       <span style={{ fontWeight: 600 }}>{fullName(c)}</span>
                       {c.do_not_contact && (
