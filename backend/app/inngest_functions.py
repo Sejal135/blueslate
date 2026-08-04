@@ -100,7 +100,7 @@ async def run_campaign(ctx: inngest.Context) -> dict:
         result = await ctx.step.run(
             f"dial-contact-{contact['id']}",
             process_contact,
-            tenant_id, campaign_id, tenant, tenant.get("slug"), knowledge, contact,
+            tenant_id, campaign_id, campaign["goal"], tenant, tenant.get("slug"), knowledge, contact,
         )
         results.append(result)
 

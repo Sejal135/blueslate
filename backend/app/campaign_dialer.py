@@ -78,6 +78,29 @@ def format_kb_for_agent(kb: dict) -> str:
     return "\n".join(lines) if lines else "No information available yet."
 
 
+# Outbound framing per campaign goal — the base agent is written for inbound calls
+# ("a parent is calling you"), so campaign calls need to flip that: we called them.
+CAMPAIGN_GOAL_CONTEXT = {
+    "reengage_past_leads": "You are calling a parent who previously showed interest in {business_name} "
+                           "but hasn't enrolled. Warmly re-engage them and invite them to a free trial.",
+    "fill_summer_camp": "You are calling a parent about {business_name}'s summer camp. Let them know "
+                        "spots are available and invite them to sign up before camp fills up.",
+    "follow_up_trial": "You are calling a parent whose child attended a trial at {business_name} but "
+                       "didn't enroll. Follow up warmly, ask how the trial went, and address any hesitation.",
+    "winback_inactive": "You are calling a family that's been inactive at {business_name}. Reconnect "
+                        "warmly, share what's new, and invite them back.",
+    "follow_up_noshow": "You are calling a parent who booked a trial at {business_name} but didn't show "
+                        "up. Follow up warmly and see if they'd like to reschedule.",
+    "custom": "You are calling on behalf of {business_name} for this campaign. Be warm, listen for the "
+             "parent's needs, and guide the conversation naturally.",
+}
+
+
+def campaign_context_for(goal: str, business_name: str) -> str:
+    template = CAMPAIGN_GOAL_CONTEXT.get(goal, CAMPAIGN_GOAL_CONTEXT["custom"])
+    return template.format(business_name=business_name)
+
+
 def load_campaign(campaign_id: str) -> dict:
     res = supabase_client.table("campaigns").select("*").eq("id", campaign_id).single().execute()
     return res.data
@@ -115,8 +138,8 @@ def set_campaign_status(campaign_id: str, status: str) -> str:
 # Always writes a call_logs row (dialed/skipped_.../failed) and never raises —
 # a transient Retell error must not trigger an Inngest function-level retry
 # that could end up placing a second call to the same contact.
-async def process_contact(tenant_id: str, campaign_id: str, tenant: dict, tenant_slug: str,
-                           knowledge: str, contact: dict) -> dict:
+async def process_contact(tenant_id: str, campaign_id: str, campaign_goal: str, tenant: dict,
+                           tenant_slug: str, knowledge: str, contact: dict) -> dict:
     allowed, reason = can_dial(contact, tenant)
     if not allowed:
         supabase_client.table("call_logs").insert({
@@ -126,13 +149,15 @@ async def process_contact(tenant_id: str, campaign_id: str, tenant: dict, tenant
         }).execute()
         return {"contact_id": contact["id"], "result": f"skipped_{reason}"}
 
+    business_name = tenant.get("name") or "our program"
     payload = {
         "from_number": RETELL_FROM_NUMBER,
         "to_number": contact["phone"],
         "metadata": {"tenant_slug": tenant_slug, "campaign_id": campaign_id},
         "retell_llm_dynamic_variables": {
-            "business_name": tenant.get("name") or "our program",
+            "business_name": business_name,
             "knowledge": knowledge,
+            "campaign_context": campaign_context_for(campaign_goal, business_name),
         },
     }
     if tenant.get("voice_id"):
