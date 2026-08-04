@@ -17,7 +17,7 @@ from firecrawl import FirecrawlApp
 from groq import Groq
 from supabase import create_client
 import inngest.fast_api
-from app.inngest_functions import inngest_client, test_function, run_kb_ingestion
+from app.inngest_functions import inngest_client, test_function, run_kb_ingestion, run_campaign
 
 load_dotenv()
 
@@ -36,7 +36,7 @@ app.add_middleware(
 )
 
 # Serve Inngest functions at /api/inngest
-inngest.fast_api.serve(app, inngest_client, [test_function, run_kb_ingestion])
+inngest.fast_api.serve(app, inngest_client, [test_function, run_kb_ingestion, run_campaign])
 
 # Initialize Firecrawl
 firecrawl = FirecrawlApp(api_key=os.getenv("FIRECRAWL_API_KEY"))
@@ -767,6 +767,26 @@ async def check_can_dial(tenant_slug: str, contact_id: str):
 
         allowed, reason = can_dial(contact.data, tenant.data)
         return {"status": "success", "can_dial": allowed, "reason": reason}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# Launch a campaign: marks it active and hands off to Inngest's run-campaign
+# function, which walks the audience and dials TCPA-approved contacts. Returns immediately.
+@app.post("/campaigns/{campaign_id}/launch")
+async def launch_campaign(campaign_id: str):
+    try:
+        campaign = supabase_client.table("campaigns").select("tenant_id").eq("id", campaign_id).single().execute()
+        tenant_id = campaign.data["tenant_id"]
+
+        supabase_client.table("campaigns").update({"status": "active"}).eq("id", campaign_id).execute()
+
+        await inngest_client.send(inngest.Event(
+            name="campaign/launch.requested",
+            data={"campaign_id": campaign_id, "tenant_id": tenant_id},
+        ))
+
+        return {"status": "success", "message": "campaign launching"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

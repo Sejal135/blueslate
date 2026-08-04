@@ -107,5 +107,6 @@ In progress:
 - CSV export via /contacts/export; import via /contacts/import dedupes by normalized phone OR email, skips matches, source=imported_list; rows without phone/email can't dedupe (expected).
 - Campaigns table + /campaigns (create draft) and /campaigns/audience (contacts by status, excludes DNC and null-phone). Audience = right status + reachable + not DNC.
 - can_dial(contact, tenant) enforces TCPA — DNC, 8am–9pm local (tenant tz), max 2 attempts, 24h gap — checked in that order; pure function, no dialing.
+- /campaigns/{id}/launch enqueues Inngest run_campaign; loops audience, re-checks can_dial per contact, dials via create-phone-call, writes a call_logs attempt (or skipped_<reason>); one pass, one attempt per contact, no auto-retry.
 
 - Done:
