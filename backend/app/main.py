@@ -566,11 +566,7 @@ TRANSCRIPT:
         else:
             apply_status(tenant_id, contact_id, lead_data.get("call_outcome", "general_inquiry"))
 
-        email = lead_data.get("email")
-        if email and email != "Unknown":
-            business_name = supabase_client.table("tenants").select("name") \
-                .eq("id", tenant_id).single().execute().data.get("name", "our program")
-            send_post_call_email(business_name, email, lead_data.get("child_name", ""))
+            
 
         # Save lead to Supabase
         lead_response = supabase_client.table("leads")\
