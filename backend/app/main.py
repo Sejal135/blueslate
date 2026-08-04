@@ -627,6 +627,77 @@ async def get_leads(tenant_slug: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+
+# All call activity for a tenant. leads is the primary source (richest per-call
+# data); call_logs is embedded via its lead_id FK to attach status + provider_call_id.
+@app.get("/calls")
+async def get_calls(tenant_slug: str):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+
+        res = supabase_client.table("leads") \
+            .select("caller_name, phone_number, call_outcome, call_duration_seconds, call_timestamp, "
+                    "contact_id, call_logs(status, provider_call_id)") \
+            .eq("tenant_id", tenant_id) \
+            .order("call_timestamp", desc=True) \
+            .execute()
+
+        calls = []
+        for l in res.data:
+            log = (l.get("call_logs") or [{}])[0]
+            calls.append({
+                "caller_name": l["caller_name"],
+                "phone_number": l["phone_number"],
+                "call_outcome": l["call_outcome"],
+                "call_duration_seconds": l["call_duration_seconds"],
+                "call_timestamp": l["call_timestamp"],
+                "contact_id": l["contact_id"],
+                "provider_call_id": log.get("provider_call_id"),
+                "status": log.get("status"),
+            })
+
+        return {"status": "success", "calls": calls}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# One call's full detail, keyed by Retell's provider_call_id (not the leads row id).
+# call_logs is the source of truth for provider_call_id; leads is embedded off its lead_id FK.
+@app.get("/calls/{provider_call_id}")
+async def get_call_detail(provider_call_id: str, tenant_slug: str):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+
+        res = supabase_client.table("call_logs") \
+            .select("status, provider_call_id, "
+                    "leads(caller_name, phone_number, core_interest, call_outcome, raw_transcript, "
+                    "call_duration_seconds, call_timestamp, contact_id)") \
+            .eq("tenant_id", tenant_id).eq("provider_call_id", provider_call_id) \
+            .limit(1).execute()
+
+        if not res.data:
+            return {"status": "error", "message": "Call not found"}
+
+        row = res.data[0]
+        lead = row.get("leads") or {}
+        call = {
+            "caller_name": lead.get("caller_name"),
+            "phone_number": lead.get("phone_number"),
+            "core_interest": lead.get("core_interest"),
+            "call_outcome": lead.get("call_outcome"),
+            "raw_transcript": lead.get("raw_transcript"),
+            "call_duration_seconds": lead.get("call_duration_seconds"),
+            "call_timestamp": lead.get("call_timestamp"),
+            "contact_id": lead.get("contact_id"),
+            "provider_call_id": row.get("provider_call_id"),
+            "status": row.get("status"),
+        }
+
+        return {"status": "success", "call": call}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.get("/kb-jobs/{job_id}")
 async def get_kb_job(job_id: str):
     try:
