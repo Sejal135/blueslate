@@ -6,13 +6,6 @@ content studio + outbound calls. Everything is grounded in a per-tenant knowledg
 XP League Frisco (Esports). Hard constraints: $0 cost (free tiers only) and multi-tenant
 isolation from day one.
 
-## Project state
-- Phase 0 complete: full v2 schema, RLS, seed data, design tokens.
-- Phase 1 complete: onboarding is complete — all 5 steps live, step 5 places a real outbound call via /onboarding/call.
-- Phase 2 in progress: (1) create_tenant seeds lead_statuses per tenant; (2) status is advance-only via sort_order, keyed on the contact, mapped from call_outcome.
-- Done: Phase 2 started. 
-- Contact + child resolution is upsert-by-natural-key (contact by normalized phone, child by contact+name); normalize_phone returns None on anything not a clean US 10/11-digit number rather than fabricating an E.164.
-
 
 ## Stack & layout
 - Backend: FastAPI on Render. Code in `backend/app/`. Run: `uvicorn app.main:app` from `backend/`.
@@ -91,9 +84,26 @@ isolation from day one.
 - KNOWN GAP — `/webhook` it resolves tenant from call.metadata.tenant_slug (outbound). falls back to pilot for inbound for tenant_slug in main.py, for inbound it is hardcoded `xpleague-frisco`.
   Correct fix is phone-number → tenant lookup, blocked on per-franchise Twilio number provisioning
   (the unresolved SIP inbound item). Safe placeholder until telephony-per-tenant exists.
-  Corrupt/scanned PDFs fail the parse step with a raw error; acceptable for now but the UI does not show failed or a friendlier parse-level guard would help.
-  Need to improve the agent message as it currently it indicated the wrong date.
-  For contacts/tenants dashboard: Want a way to clean up / soft-delete test tenants. Not now, but note it.
-- TODO (non-urgent): the "look up tenant_id from slug" block repeats across endpoints — extract a
+  - Corrupt/scanned PDFs fail the parse step with a raw error; acceptable for now but the UI does not show failed or a friendlier parse-level guard would help.
+  - Need to improve the agent message as it currently it indicated the wrong date.
+  - For contacts/tenants dashboard: Want a way to clean up / soft-delete test tenants. Not now, but note it.
+  - TODO (non-urgent): the "look up tenant_id from slug" block repeats across endpoints — extract a
   `get_tenant_id(slug)` helper when convenient.
 
+URGENT TO-DO:
+- Item 17 (TDoS throttle) — DEFERRED, not optional. Real enforcement (A) must hook Retell's call_started (pre-call) to drop 3+ calls from one number in 10 min before answering. Not built because inbound is currently one shared number (XP League only) — no real attack surface yet. Hard prerequisite before per-tenant inbound numbers or outbound campaigns (Phase 3) go live. Post-call detection (B) was considered and rejected: it can't prevent credit burn and would need rework into A anyway.
+
+
+## Project state
+- Phase 0 complete: full v2 schema, RLS, seed data, design tokens.
+- Phase 1 complete: onboarding is complete — all 5 steps live, step 5 places a real outbound call via /onboarding/call.
+- Phase 2: Task 13 pushed to Phase 3. Task 17 pushed until funtionality available (each franchise has it's own unique phone number for inbound calls). Task 12, 16 is done. 
+In progress: 
+- (1) create_tenant seeds lead_statuses per tenant; (2) status is advance-only via sort_order, keyed on the contact, mapped from call_outcome.
+- (2) Opt-out detection rides in the lead-extraction Groq call (opted_out/opt_out_phrase); apply_dnc sets do_not_contact + DNC status as an override, in the same webhook transaction.
+- /webhook gates on event == "call_analyzed" and dedupes by provider_call_id (Retell sends 3 lifecycle events per call + may retry the same one)
+- The handler is slow (Groq + DB); a cleaner long-term fix is returning 200 immediately and processing async via Inngest, so Retell never retries.
+- Contact + child resolution is upsert-by-natural-key (contact by normalized phone, child by contact+name); normalize_phone returns None on anything not a clean US 10/11-digit number rather than fabricating an E.164.
+
+
+- Done:

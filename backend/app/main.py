@@ -364,7 +364,7 @@ async def handle_webhook(payload: dict):
             .select("id").eq("provider_call_id", call_id).limit(1).execute()
         if existing.data:
             return {"status": "duplicate", "call_id": call_id}
-        
+         
         recording_url = call_object.get("recording_url", "")
         duration = call_object.get("call_cost", {}).get("total_duration_seconds", 0)
 
