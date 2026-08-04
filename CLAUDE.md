@@ -104,6 +104,6 @@ In progress:
 - /webhook gates on event == "call_analyzed" and dedupes by provider_call_id (Retell sends 3 lifecycle events per call + may retry the same one)
 - The handler is slow (Groq + DB); a cleaner long-term fix is returning 200 immediately and processing async via Inngest, so Retell never retries.
 - Contact + child resolution is upsert-by-natural-key (contact by normalized phone, child by contact+name); normalize_phone returns None on anything not a clean US 10/11-digit number rather than fabricating an E.164.
-
+- CSV export via /contacts/export; import via /contacts/import dedupes by normalized phone OR email, skips matches, source=imported_list; rows without phone/email can't dedupe (expected).
 
 - Done:

@@ -1,10 +1,13 @@
 import os
+import io
 import json
 import re
 import uuid
+import csv
 import httpx
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -247,6 +250,37 @@ def health_check():
     return {"status": "ok", "project": "blueslate"}
 
 
+# Export a tenant's contacts as a downloadable CSV.
+@app.get("/contacts/export")
+async def export_contacts(tenant_slug: str):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+        res = supabase_client.table("contacts") \
+            .select("first_name, last_name, phone, email, do_not_contact, "
+                    "lead_statuses(key), created_at") \
+            .eq("tenant_id", tenant_id).order("created_at", desc=True).execute()
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["first_name", "last_name", "phone", "email", "status", "do_not_contact", "created_at"])
+        for c in res.data:
+            status = (c.get("lead_statuses") or {}).get("key", "")
+            writer.writerow([
+                c.get("first_name", ""), c.get("last_name", ""),
+                c.get("phone", "") or "", c.get("email", "") or "",
+                status, c.get("do_not_contact", False), c.get("created_at", ""),
+            ])
+
+        buf.seek(0)
+        return StreamingResponse(
+            iter([buf.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={tenant_slug}-contacts.csv"},
+        )
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.post("/scrape")
 async def scrape_url(request: ScrapeRequest):
     try:
@@ -340,6 +374,57 @@ async def ingest_voice(tenant_slug: str = Form(...), file: UploadFile = File(...
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# Import contacts from an uploaded CSV. Dedupes by normalized phone OR email; skips matches.
+@app.post("/contacts/import")
+async def import_contacts(tenant_slug: str = Form(...), file: UploadFile = File(...)):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+
+        # Read the uploaded CSV into rows.
+        raw = await file.read()
+        text = raw.decode("utf-8-sig")  # utf-8-sig strips Excel's byte-order mark if present
+        reader = csv.DictReader(io.StringIO(text))
+
+        created, skipped, errors = 0, 0, 0
+        for row in reader:
+            try:
+                phone = normalize_phone(row.get("phone", ""))
+                email = (row.get("email") or "").strip().lower() or None
+
+                # Dedupe: does a contact already match by phone OR email?
+                match = None
+                if phone:
+                    r = supabase_client.table("contacts").select("id") \
+                        .eq("tenant_id", tenant_id).eq("phone", phone).limit(1).execute()
+                    if r.data:
+                        match = r.data[0]
+                if not match and email:
+                    r = supabase_client.table("contacts").select("id") \
+                        .eq("tenant_id", tenant_id).eq("email", email).limit(1).execute()
+                    if r.data:
+                        match = r.data[0]
+
+                if match:
+                    skipped += 1
+                    continue
+
+                # No match → create the contact.
+                supabase_client.table("contacts").insert({
+                    "tenant_id": tenant_id,
+                    "first_name": (row.get("first_name") or "").strip() or "Unknown",
+                    "last_name": (row.get("last_name") or "").strip(),
+                    "phone": phone,
+                    "email": email,
+                    "source": "imported_list",
+                }).execute()
+                created += 1
+            except Exception:
+                errors += 1
+
+        return {"status": "success", "created": created, "skipped": skipped, "errors": errors}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.post("/webhook")
 async def handle_webhook(payload: dict):
