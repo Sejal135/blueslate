@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { tokens } from "../../tokens";
+import TopNav from "../../components/TopNav";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -68,12 +69,7 @@ export default function CallDetailPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: tokens.surfaceSubtle, fontFamily: tokens.fontSans, color: tokens.textPrimary }}>
-      {/* Nav */}
-      <div style={{ background: tokens.brandSlate, padding: "18px 24px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <span style={{ color: "#fff", fontSize: 24, fontWeight: 700 }}>Blueslate</span>
-        </div>
-      </div>
+      <TopNav active="calls" />
 
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px" }}>
         <Link href="/calls" style={{ color: tokens.textSecondary, fontSize: 14, textDecoration: "none" }}>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { tokens } from "../tokens";
+import TopNav from "../components/TopNav";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -77,10 +78,9 @@ export default function ContactsPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: tokens.surfaceSubtle, fontFamily: tokens.fontSans, color: tokens.textPrimary }}>
-      {/* Nav */}
-      <div style={{ background: tokens.brandSlate, padding: "18px 24px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: "#fff", fontSize: 24, fontWeight: 700 }}>Blueslate</span>
+      <TopNav
+        active="contacts"
+        right={
           <select
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
@@ -90,8 +90,8 @@ export default function ContactsPage() {
               <option key={t.slug} value={t.slug}>{t.name} ({t.slug})</option>
             ))}
           </select>
-        </div>
-      </div>
+        }
+      />
 
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px" }}>
         {/* Page header */}

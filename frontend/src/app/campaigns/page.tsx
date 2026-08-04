@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { tokens } from "../tokens";
+import TopNav from "../components/TopNav";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -129,10 +130,9 @@ export default function CampaignsPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: tokens.surfaceSubtle, fontFamily: tokens.fontSans, color: tokens.textPrimary }}>
-      {/* Nav */}
-      <div style={{ background: tokens.brandSlate, padding: "18px 24px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: "#fff", fontSize: 24, fontWeight: 700 }}>Blueslate</span>
+      <TopNav
+        active="campaigns"
+        right={
           <select
             value={slug}
             onChange={(e) => {
@@ -145,8 +145,8 @@ export default function CampaignsPage() {
               <option key={t.slug} value={t.slug}>{t.name} ({t.slug})</option>
             ))}
           </select>
-        </div>
-      </div>
+        }
+      />
 
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "40px 24px" }}>
         <h1 style={{ fontSize: 28, fontWeight: 600, margin: "0 0 6px" }}>Launch a campaign</h1>

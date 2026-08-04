@@ -698,6 +698,49 @@ async def get_call_detail(provider_call_id: str, tenant_slug: str):
         return {"status": "error", "message": str(e)}
 
 
+# Dashboard summary: today's call count, new-lead count, and a recent-leads feed.
+@app.get("/dashboard")
+async def get_dashboard(tenant_slug: str):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+
+        start_of_day = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = start_of_day + timedelta(days=1)
+        today_res = supabase_client.table("leads").select("id", count="exact", head=True) \
+            .eq("tenant_id", tenant_id) \
+            .gte("call_timestamp", start_of_day.isoformat()) \
+            .lt("call_timestamp", end_of_day.isoformat()) \
+            .execute()
+        today_calls = today_res.count or 0
+
+        new_lead_status = supabase_client.table("lead_statuses").select("id") \
+            .eq("tenant_id", tenant_id).eq("key", "new_lead").limit(1).execute()
+        if new_lead_status.data:
+            new_leads_res = supabase_client.table("contacts").select("id", count="exact", head=True) \
+                .eq("tenant_id", tenant_id) \
+                .eq("lead_status_id", new_lead_status.data[0]["id"]) \
+                .execute()
+            new_leads = new_leads_res.count or 0
+        else:
+            new_leads = 0
+
+        recent_res = supabase_client.table("leads") \
+            .select("caller_name, core_interest, call_outcome, call_timestamp, contact_id") \
+            .eq("tenant_id", tenant_id) \
+            .order("call_timestamp", desc=True) \
+            .limit(8) \
+            .execute()
+
+        return {
+            "status": "success",
+            "today_calls": today_calls,
+            "new_leads": new_leads,
+            "recent_leads": recent_res.data,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.get("/kb-jobs/{job_id}")
 async def get_kb_job(job_id: str):
     try:
