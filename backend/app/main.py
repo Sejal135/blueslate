@@ -10,7 +10,8 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from firecrawl import FirecrawlApp
 from groq import Groq
@@ -677,6 +678,40 @@ async def get_contacts(tenant_slug: str):
         return {"status": "error", "message": str(e)}
 
 
+# TCPA compliance gate: decides whether a contact may be dialed right now.
+# Pure decision logic only — does not place calls. Checks, in order: DNC,
+# calling-hours window (8am-9pm in the tenant's local timezone), and retry limits.
+def can_dial(contact: dict, tenant: dict) -> tuple[bool, str]:
+    if contact.get("do_not_contact") is True:
+        return False, "dnc"
+
+    tz_name = tenant.get("timezone") or "America/Chicago"
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("America/Chicago")
+
+    local_now = datetime.now(tz)
+    if not (8 <= local_now.hour < 21):
+        return False, "outside_calling_hours"
+
+    logs = supabase_client.table("call_logs") \
+        .select("created_at") \
+        .eq("contact_id", contact["id"]) \
+        .order("created_at", desc=True) \
+        .execute()
+
+    if len(logs.data) >= 2:
+        return False, "max_retries"
+
+    if logs.data:
+        last_attempt = datetime.fromisoformat(logs.data[0]["created_at"])
+        if datetime.now(timezone.utc) - last_attempt < timedelta(hours=24):
+            return False, "retry_too_soon"
+
+    return True, "ok"
+
+
 # Create a draft campaign (audience + goal only — no dialing/scheduling logic yet).
 @app.post("/campaigns")
 async def create_campaign(req: CreateCampaignRequest):
@@ -716,6 +751,22 @@ async def get_campaign_audience(tenant_slug: str, status_key: str):
         ]
 
         return {"status": "success", "count": len(contacts), "contacts": contacts}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# Test endpoint for the TCPA gate — does not dial, just reports the decision.
+@app.get("/campaigns/can-dial")
+async def check_can_dial(tenant_slug: str, contact_id: str):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+
+        tenant = supabase_client.table("tenants").select("*").eq("id", tenant_id).single().execute()
+        contact = supabase_client.table("contacts").select("*") \
+            .eq("id", contact_id).eq("tenant_id", tenant_id).single().execute()
+
+        allowed, reason = can_dial(contact.data, tenant.data)
+        return {"status": "success", "can_dial": allowed, "reason": reason}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

@@ -106,5 +106,6 @@ In progress:
 - Contact + child resolution is upsert-by-natural-key (contact by normalized phone, child by contact+name); normalize_phone returns None on anything not a clean US 10/11-digit number rather than fabricating an E.164.
 - CSV export via /contacts/export; import via /contacts/import dedupes by normalized phone OR email, skips matches, source=imported_list; rows without phone/email can't dedupe (expected).
 - Campaigns table + /campaigns (create draft) and /campaigns/audience (contacts by status, excludes DNC and null-phone). Audience = right status + reachable + not DNC.
+- can_dial(contact, tenant) enforces TCPA — DNC, 8am–9pm local (tenant tz), max 2 attempts, 24h gap — checked in that order; pure function, no dialing.
 
 - Done:
