@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { tokens } from "../../tokens";
@@ -39,7 +39,7 @@ type Activity = LeadActivity | CallLogActivity;
 
 const humanize = (s: string) => (s ? s.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase()) : "");
 
-export default function ContactDetailPage() {
+function ContactDetailContent() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const tenantSlug = searchParams.get("tenant_slug") || "";
@@ -193,5 +193,13 @@ export default function ContactDetailPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ContactDetailPage() {
+  return (
+    <Suspense fallback={<div />}>
+      <ContactDetailContent />
+    </Suspense>
   );
 }

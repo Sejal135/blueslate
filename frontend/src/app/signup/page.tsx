@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, Suspense, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
@@ -8,7 +8,7 @@ import { tokens } from "../tokens";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
-export default function SignupPage() {
+function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tenantSlug = searchParams.get("tenant_slug") || "";
@@ -156,5 +156,13 @@ export default function SignupPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div />}>
+      <SignupForm />
+    </Suspense>
   );
 }

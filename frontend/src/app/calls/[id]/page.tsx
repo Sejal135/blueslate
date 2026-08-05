@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { tokens } from "../../tokens";
@@ -30,7 +30,7 @@ const OUTCOME_COLORS: Record<string, string> = {
 const outcomeColor = (outcome: string) => OUTCOME_COLORS[outcome] || "#64748B";
 const humanize = (s: string) => (s ? s.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase()) : "");
 
-export default function CallDetailPage() {
+function CallDetailContent() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const tenantSlug = searchParams.get("tenant_slug") || "";
@@ -136,5 +136,13 @@ export default function CallDetailPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function CallDetailPage() {
+  return (
+    <Suspense fallback={<div />}>
+      <CallDetailContent />
+    </Suspense>
   );
 }
