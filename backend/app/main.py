@@ -285,6 +285,11 @@ class CreateCampaignRequest(BaseModel):
     audience_status_key: str | None = None
     scheduled_at: str | None = None
 
+class LinkProfileRequest(BaseModel):
+    user_id: str
+    tenant_slug: str
+
+
 class VoiceRequest(BaseModel):
     voice_id: str
 
@@ -737,6 +742,37 @@ async def get_dashboard(tenant_slug: str):
             "new_leads": new_leads,
             "recent_leads": recent_res.data,
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# Links a Supabase Auth user to the tenant they claim. Upsert by user_id (the
+# profiles PK) so re-linking (e.g. a second onboarding pass) just repoints it.
+@app.post("/profiles/link")
+async def link_profile(req: LinkProfileRequest):
+    try:
+        tenant_id = get_tenant_id(req.tenant_slug)
+
+        supabase_client.table("profiles").upsert(
+            {"user_id": req.user_id, "tenant_id": tenant_id},
+            on_conflict="user_id",
+        ).execute()
+
+        return {"status": "success", "user_id": req.user_id, "tenant_id": tenant_id}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/profiles/{user_id}")
+async def get_profile(user_id: str):
+    try:
+        res = supabase_client.table("profiles").select("tenants(slug, name)") \
+            .eq("user_id", user_id).limit(1).execute()
+
+        if not res.data or not res.data[0].get("tenants"):
+            return {"status": "error", "message": "no tenant linked"}
+
+        return {"status": "success", "tenant": res.data[0]["tenants"]}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
