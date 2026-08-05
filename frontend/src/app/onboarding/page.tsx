@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { tokens } from "../tokens";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
@@ -482,6 +483,15 @@ function Step5Call({ data }: { data: OnboardingData }) {
         <p style={{ color: tokens.textSecondary, margin: 0 }}>
           Your phone should ring in a few seconds. Pick up and meet your AI receptionist — it knows everything you just taught it.
         </p>
+        <Link
+          href={`/signup?tenant_slug=${data.tenantSlug}`}
+          style={{
+            display: "inline-block", marginTop: 24, background: tokens.brandTeal, color: "#fff",
+            border: "none", borderRadius: 8, padding: "12px 24px", fontWeight: 600, textDecoration: "none",
+          }}
+        >
+          Save your franchise — create an account
+        </Link>
       </div>
     );
   }
