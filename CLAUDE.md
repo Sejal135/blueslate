@@ -111,5 +111,6 @@ In progress:
 - Supabase Auth (email/password) wired on frontend; signup/login pages, useAuth hook + signOut built (not yet gating pages); confirmation off for dev.
 - profiles table links auth user → tenant; /profiles/link (upsert on signup) + /profiles/{user_id}; signup requires a tenant_slug (redirects to onboarding without one) — no tenant-less accounts. 
 - dashboard gates on useAuth, resolves tenant via GET /profiles/{user_id} (no dropdown); logged-out → redirect to /login; no-linked-tenant shows a message instead of crashing.
+- contacts/calls/campaigns (+ detail pages) gate on useAuth, resolve tenant via GET /profiles/{user_id}, no dropdowns; detail pages no longer take tenant_slug in the URL.
 
 - Done:
