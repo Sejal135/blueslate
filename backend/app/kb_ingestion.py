@@ -43,31 +43,43 @@ def set_job_status(
     supabase_client.table("kb_jobs").update(update).eq("id", job_id).execute()
     return status
 
+RELEVANT_KEYWORDS = [
+    "about", "program", "class", "pricing", "price", "trial", "camp",
+    "party", "birthday", "schedule", "contact", "faq", "enroll", "register",
+]
 
 def scrape_site(url: str) -> str:
-    target_urls = [
-        f"{url.rstrip('/')}/about-us",
-        f"{url.rstrip('/')}/trial-session",
-        f"{url.rstrip('/')}/book-your-party",
-        f"{url.rstrip('/')}/summercamps",
-        f"{url.rstrip('/')}/additional-programs",
-    ]
+    # 1. Discover the site's real pages instead of guessing fixed paths.
+    all_urls = []
+    try:
+        map_result = firecrawl.map(url=url, limit=50, sitemap="include")
+        links = map_result.get("links", []) if isinstance(map_result, dict) else getattr(map_result, "links", [])
+        all_urls = [l["url"] if isinstance(l, dict) else l.url for l in links]
+        print(f"MAP found {len(all_urls)} urls for {url}")
+    except Exception as e:
+        print("MAP ERROR:", repr(e))
 
-    all_content = []
-    for u in target_urls:
+    # 2. Filter to pages that look relevant by keyword in the URL.
+    relevant = [u for u in all_urls if any(kw in u.lower() for kw in RELEVANT_KEYWORDS)]
+
+    # 3. Always include the homepage, dedupe, cap pages scraped (cost control).
+    target_urls = [url] + relevant
+    target_urls = list(dict.fromkeys(target_urls))[:6]
+    print(f"SCRAPING {len(target_urls)} pages: {target_urls}")
+
+    # 4. Scrape each target page and combine the content.
+    combined = ""
+    for page_url in target_urls:
         try:
-            result = firecrawl.scrape_url(
-                u,
-                formats=["markdown"],
-                actions=[{"type": "wait", "milliseconds": 8000}],
-            )
-            if result.markdown and len(result.markdown.strip()) > 100:
-                all_content.append(f"## Page: {u}\n{result.markdown}")
-        except Exception:
+            doc = firecrawl.scrape(page_url, formats=["markdown"])
+            content = doc.get("markdown", "") if isinstance(doc, dict) else getattr(doc, "markdown", "")
+            print(f"  {page_url}: {len(content)} chars")
+            combined += f"\n\n--- {page_url} ---\n{content}"
+        except Exception as e:
+            print(f"SCRAPE ERROR ({page_url}):", repr(e))
             continue
 
-    combined = "\n\n---\n\n".join(all_content)
-    return combined[:8000] if len(combined) > 8000 else combined
+    return combined
 
 
 def extract_kb(combined_content: str) -> dict:
