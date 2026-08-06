@@ -581,8 +581,8 @@ TRANSCRIPT:
             apply_status(tenant_id, contact_id, lead_data.get("call_outcome", "general_inquiry"))
 
         # Send the post-call trial-info email if we captured one.
-        email = lead_data.get("email")
-        if email and email != "Unknown":
+        email = (lead_data.get("email") or "").strip().lower()
+        if email and email != "unknown":
             business_name = supabase_client.table("tenants").select("name") \
                 .eq("id", tenant_id).single().execute().data.get("name", "our program")
             sent = send_post_call_email(business_name, email, lead_data.get("child_name", ""))
