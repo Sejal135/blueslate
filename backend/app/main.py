@@ -338,7 +338,6 @@ async def export_contacts(tenant_slug: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-
 @app.post("/scrape")
 async def scrape_url(request: ScrapeRequest):
     try:
@@ -370,7 +369,6 @@ async def scrape_url(request: ScrapeRequest):
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
 
 @app.post("/ingest/file")
 async def ingest_file(tenant_slug: str = Form(...), file: UploadFile = File(...)):

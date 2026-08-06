@@ -48,6 +48,8 @@ RELEVANT_KEYWORDS = [
     "party", "birthday", "schedule", "contact", "faq", "enroll", "register",
 ]
 
+MAX_EXTRACT_CHARS = 12000  # <-- NEW: cap total scraped content sent to Groq
+
 def scrape_site(url: str) -> str:
     # 1. Discover the site's real pages instead of guessing fixed paths.
     all_urls = []
@@ -79,8 +81,12 @@ def scrape_site(url: str) -> str:
             print(f"SCRAPE ERROR ({page_url}):", repr(e))
             continue
 
-    return combined
+    # 5. NEW — cap total size so a rich site doesn't overload the extraction step.
+    if len(combined) > MAX_EXTRACT_CHARS:
+        print(f"Truncating combined content from {len(combined)} to {MAX_EXTRACT_CHARS} chars")
+        combined = combined[:MAX_EXTRACT_CHARS]
 
+    return combined
 
 def extract_kb(combined_content: str) -> dict:
     prompt = f"""
