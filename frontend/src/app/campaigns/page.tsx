@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { tokens } from "../tokens";
 import TopNav from "../components/TopNav";
+import { useAuth, signOut } from "../lib/useAuth";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -25,9 +27,12 @@ const GOALS = [
 ];
 
 export default function CampaignsPage() {
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [slug, setSlug] = useState("");
-  const [error, setError] = useState("");
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState("");
 
   const [statusKey, setStatusKey] = useState("");
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
@@ -42,22 +47,31 @@ export default function CampaignsPage() {
   const [launchSuccess, setLaunchSuccess] = useState("");
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API}/tenants`);
-        const json = await res.json();
-        if (json.status === "success" && json.tenants.length) {
-          setTenants(json.tenants);
-          setSlug(json.tenants[0].slug);
-        } else setError("No tenants found.");
-      } catch {
-        setError("Could not reach the server.");
-      }
-    })();
-  }, []);
+    if (!authLoading && !user) {
+      router.push("/login");
+    }
+  }, [authLoading, user, router]);
 
   useEffect(() => {
-    if (!slug || !statusKey) {
+    if (!user) return;
+    setProfileLoading(true);
+    setProfileError("");
+    (async () => {
+      try {
+        const res = await fetch(`${API}/profiles/${user.id}`);
+        const json = await res.json();
+        if (json.status === "success") setTenant(json.tenant);
+        else setProfileError("No franchise linked to this account.");
+      } catch {
+        setProfileError("Could not reach the server.");
+      } finally {
+        setProfileLoading(false);
+      }
+    })();
+  }, [user]);
+
+  useEffect(() => {
+    if (!tenant || !statusKey) {
       setAudienceCount(null);
       return;
     }
@@ -65,7 +79,7 @@ export default function CampaignsPage() {
     setAudienceError("");
     (async () => {
       try {
-        const res = await fetch(`${API}/campaigns/audience?tenant_slug=${slug}&status_key=${statusKey}`);
+        const res = await fetch(`${API}/campaigns/audience?tenant_slug=${tenant.slug}&status_key=${statusKey}`);
         const json = await res.json();
         if (json.status === "success") setAudienceCount(json.count);
         else {
@@ -79,19 +93,15 @@ export default function CampaignsPage() {
         setAudienceLoading(false);
       }
     })();
-  }, [slug, statusKey]);
+  }, [tenant, statusKey]);
 
-  function resetBuilder() {
-    setStatusKey("");
-    setAudienceCount(null);
-    setAudienceError("");
-    setGoal("");
-    setName("");
-    setLaunchError("");
-    setLaunchSuccess("");
+  async function handleLogout() {
+    await signOut();
+    router.push("/login");
   }
 
   async function handleLaunch() {
+    if (!tenant) return;
     setLaunching(true);
     setLaunchError("");
     setLaunchSuccess("");
@@ -99,7 +109,7 @@ export default function CampaignsPage() {
       const createRes = await fetch(`${API}/campaigns`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenant_slug: slug, name, goal, audience_status_key: statusKey }),
+        body: JSON.stringify({ tenant_slug: tenant.slug, name, goal, audience_status_key: statusKey }),
       });
       const createJson = await createRes.json();
       if (createJson.status !== "success") {
@@ -128,23 +138,40 @@ export default function CampaignsPage() {
   const sectionTitle = { fontSize: 18, fontWeight: 600, margin: "0 0 4px" };
   const sectionHint = { color: tokens.textSecondary, fontSize: 14, margin: "0 0 16px" };
 
+  // Don't flash any page chrome until we know who's logged in and what they can see.
+  if (authLoading || (user && profileLoading)) {
+    return (
+      <div style={{ minHeight: "100vh", background: tokens.surfaceSubtle, fontFamily: tokens.fontSans, color: tokens.textPrimary, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <p style={{ color: tokens.textMuted }}>Loading…</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null; // redirecting to /login
+  }
+
+  const logoutButton = (
+    <button
+      onClick={handleLogout}
+      style={{
+        background: "transparent", border: "1px solid rgba(255,255,255,0.3)", color: "rgba(255,255,255,0.85)",
+        borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+      }}
+    >
+      Log out
+    </button>
+  );
+
   return (
     <div style={{ minHeight: "100vh", background: tokens.surfaceSubtle, fontFamily: tokens.fontSans, color: tokens.textPrimary }}>
       <TopNav
         active="campaigns"
         right={
-          <select
-            value={slug}
-            onChange={(e) => {
-              setSlug(e.target.value);
-              resetBuilder();
-            }}
-            style={{ padding: "10px 14px", borderRadius: 8, border: "none", fontSize: 14, fontFamily: tokens.fontSans, background: "#fff", color: tokens.textPrimary, maxWidth: 340 }}
-          >
-            {tenants.map((t) => (
-              <option key={t.slug} value={t.slug}>{t.name} ({t.slug})</option>
-            ))}
-          </select>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {tenant && <span style={{ color: "#fff", fontSize: 14, fontWeight: 600 }}>{tenant.name}</span>}
+            {logoutButton}
+          </div>
         }
       />
 
@@ -154,8 +181,12 @@ export default function CampaignsPage() {
           Pick an audience and a goal, then Blueslate calls them for you.
         </p>
 
-        {error && <p style={{ color: tokens.brandCoral }}>{error}</p>}
-
+        {profileError ? (
+          <div style={{ background: tokens.surfaceBase, border: `1px solid ${tokens.borderDefault}`, borderRadius: 12, padding: 48, textAlign: "center", color: tokens.textMuted, fontSize: 15 }}>
+            {profileError}
+          </div>
+        ) : (
+          <>
         {/* Question 1 — audience */}
         <div style={card}>
           <h2 style={sectionTitle}>1. Who do you want to reach?</h2>
@@ -263,6 +294,8 @@ export default function CampaignsPage() {
             <p style={{ color: tokens.brandTeal, fontSize: 14, fontWeight: 600, marginTop: 12 }}>{launchSuccess}</p>
           )}
         </div>
+          </>
+        )}
       </div>
     </div>
   );

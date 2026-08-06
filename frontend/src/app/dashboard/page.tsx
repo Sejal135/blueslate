@@ -208,7 +208,7 @@ export default function DashboardPage() {
                           </div>
                         );
                         return l.contact_id ? (
-                          <Link key={i} href={`/contacts/${l.contact_id}?tenant_slug=${tenant?.slug}`} style={{ textDecoration: "none", color: "inherit" }}>
+                          <Link key={i} href={`/contacts/${l.contact_id}`} style={{ textDecoration: "none", color: "inherit" }}>
                             {row}
                           </Link>
                         ) : (
