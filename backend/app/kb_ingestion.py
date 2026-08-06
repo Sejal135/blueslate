@@ -48,7 +48,7 @@ RELEVANT_KEYWORDS = [
     "party", "birthday", "schedule", "contact", "faq", "enroll", "register",
 ]
 
-MAX_EXTRACT_CHARS = 12000  # <-- NEW: cap total scraped content sent to Groq
+MAX_EXTRACT_CHARS = 6000  # <-- NEW: cap total scraped content sent to Groq
 
 def scrape_site(url: str) -> str:
     # 1. Discover the site's real pages instead of guessing fixed paths.
