@@ -262,6 +262,7 @@ function Step3Ingestion({ data, update }: { data: OnboardingData; update: (p: Pa
   const [urlInput, setUrlInput] = useState("");
   const [jobs, setJobs] = useState<{ id: string; label: string; status: string; message: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [preview, setPreview] = useState<any>(null);
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -279,6 +280,17 @@ function Step3Ingestion({ data, update }: { data: OnboardingData; update: (p: Pa
       } catch { break; }
     }
   }
+
+  useEffect(() => {
+    if (!data.kbReady) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API}/kb/preview?tenant_slug=${data.tenantSlug}`);
+        const json = await res.json();
+        if (json.status === "success") setPreview(json.kb);
+      } catch {}
+    })();
+  }, [data.kbReady, data.tenantSlug]);
 
   function addJob(id: string, label: string) {
     setJobs((prev) => [...prev, { id, label, status: "queued", message: "Queued…" }]);
@@ -366,6 +378,22 @@ function Step3Ingestion({ data, update }: { data: OnboardingData; update: (p: Pa
               </div>
             );
           })}
+        </div>
+      )}
+      {preview && (
+        <div style={{ ...card, marginTop: 16, background: "rgba(14,169,139,0.06)", border: `1px solid ${tokens.brandTeal}` }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: tokens.brandTeal, marginBottom: 10 }}>
+            ✓ Here's what we learned about your franchise
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 14, color: tokens.textPrimary }}>
+            {preview.business_name && <div><strong>Name:</strong> {preview.business_name}</div>}
+            {preview.location && <div><strong>Location:</strong> {preview.location}</div>}
+            {preview.age_range && <div><strong>Ages:</strong> {preview.age_range}</div>}
+            {preview.trial_info && <div><strong>Free trial:</strong> {preview.trial_info}</div>}
+            {preview.programs?.length > 0 && (
+              <div><strong>Programs:</strong> {preview.programs.map((p: any) => p.name).filter(Boolean).join(", ")}</div>
+            )}
+          </div>
         </div>
       )}
     </div>

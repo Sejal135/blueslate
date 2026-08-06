@@ -745,6 +745,17 @@ async def get_dashboard(tenant_slug: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# Return the tenant's current merged KB for a quick onboarding preview.
+@app.get("/kb/preview")
+async def kb_preview(tenant_slug: str):
+    try:
+        tenant_id = get_tenant_id(tenant_slug)
+        res = supabase_client.table("knowledge_base").select("structured_data") \
+            .eq("tenant_id", tenant_id).eq("is_active", True).limit(1).execute()
+        kb = res.data[0]["structured_data"] if res.data else {}
+        return {"status": "success", "kb": kb}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # Links a Supabase Auth user to the tenant they claim. Upsert by user_id (the
 # profiles PK) so re-linking (e.g. a second onboarding pass) just repoints it.
