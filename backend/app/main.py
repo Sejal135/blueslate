@@ -72,13 +72,19 @@ def _slugify(text: str) -> str:
     return s or "franchise"
 
 # Post-call email: program info + trial link to a captured parent email.
-def send_post_call_email(business_name: str, to_email: str, child_name: str):
-    kid = f" for {child_name}" if child_name and child_name != "Unknown" else "";
+def send_post_call_email(business_name: str, to_email: str, child_name: str, website_url: str | None):
+    kid = f" for {child_name}" if child_name and child_name != "Unknown" else ""
+    link = website_url or None
+    cta = (
+        f'<p><a href="{link}" style="background:#0EA98B;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none">Book your free trial</a></p>'
+        if link else
+        '<p>Reply to this email or give us a call to book your free trial!</p>'
+    )
     html = f"""
     <div style="font-family:sans-serif">
       <h2>Thanks for calling {business_name}!</h2>
       <p>We'd love to see you{kid} at a free trial class.</p>
-      <p><a href="https://example.com/book" style="background:#0EA98B;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none">Book your free trial</a></p>
+      {cta}
     </div>
     """
     return send_email(to_email, f"Your free trial at {business_name}", html)
@@ -338,6 +344,9 @@ async def scrape_url(request: ScrapeRequest):
     try:
         tenant_id = get_tenant_id(request.tenant_slug)
 
+        # Save the source URL on the tenant so we can link to their real site later (e.g. post-call email).
+        supabase_client.table("tenants").update({"website_url": request.url}).eq("id", tenant_id).execute()
+
         job = supabase_client.table("kb_jobs").insert({
             "tenant_id": tenant_id,
             "source_type": "scrape",
@@ -583,9 +592,11 @@ TRANSCRIPT:
         # Send the post-call trial-info email if we captured one.
         email = (lead_data.get("email") or "").strip().lower()
         if email and email != "unknown":
-            business_name = supabase_client.table("tenants").select("name") \
-                .eq("id", tenant_id).single().execute().data.get("name", "our program")
-            sent = send_post_call_email(business_name, email, lead_data.get("child_name", ""))
+            tenant_row = supabase_client.table("tenants").select("name, website_url") \
+                .eq("id", tenant_id).single().execute().data
+            business_name = tenant_row.get("name", "our program")
+            website_url = tenant_row.get("website_url")
+            sent = send_post_call_email(business_name, email, lead_data.get("child_name", ""), website_url)
             print(f"POST-CALL EMAIL to {email}: {'sent' if sent else 'FAILED'}")
 
         # Save lead to Supabase
