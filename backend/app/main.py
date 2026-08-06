@@ -83,6 +83,21 @@ def send_post_call_email(business_name: str, to_email: str, child_name: str):
     """
     return send_email(to_email, f"Your free trial at {business_name}", html)
 
+# Send an email via Resend. Returns True on success.
+def send_email(to: str, subject: str, html: str) -> bool:
+    try:
+        resend.Emails.send({
+            "from": "onboarding@resend.dev",  # test sender; swap for verified domain later
+            "to": to,
+            "subject": subject,
+            "html": html,
+        })
+        return True
+    except Exception as e:
+        print("EMAIL ERROR:", e)
+        return False
+    
+
 # Turns the merged KB JSON into readable text for the agent
 def format_kb_for_agent(kb: dict) -> str:
     if not kb:
@@ -239,21 +254,6 @@ def apply_dnc(tenant_id: str, contact_id: str):
     if dnc.data:
         update["lead_status_id"] = dnc.data[0]["id"]
     supabase_client.table("contacts").update(update).eq("id", contact_id).execute()
-
-
-# Send an email via Resend. Returns True on success.
-def send_email(to: str, subject: str, html: str) -> bool:
-    try:
-        resend.Emails.send({
-            "from": "onboarding@resend.dev",  # test sender; swap for verified domain later
-            "to": to,
-            "subject": subject,
-            "html": html,
-        })
-        return True
-    except Exception as e:
-        print("EMAIL ERROR:", e)
-        return False
 
 
 # Temporary endpoint to confirm email works end-to-end.
@@ -580,7 +580,13 @@ TRANSCRIPT:
         else:
             apply_status(tenant_id, contact_id, lead_data.get("call_outcome", "general_inquiry"))
 
-            
+        # Send the post-call trial-info email if we captured one.
+        email = lead_data.get("email")
+        if email and email != "Unknown":
+            business_name = supabase_client.table("tenants").select("name") \
+                .eq("id", tenant_id).single().execute().data.get("name", "our program")
+            sent = send_post_call_email(business_name, email, lead_data.get("child_name", ""))
+            print(f"POST-CALL EMAIL to {email}: {'sent' if sent else 'FAILED'}")
 
         # Save lead to Supabase
         lead_response = supabase_client.table("leads")\
