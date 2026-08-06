@@ -38,30 +38,34 @@ function SignupForm() {
       setError(error.message);
       return;
     }
-
-    // With email confirmation off, signUp() returns a session immediately and we
-    // go straight to the dashboard. If confirmation is ever turned back on, session
-    // will be null until the user confirms — fall back to the "check your email" state.
-    if (data.session && data.user) {
-      // Claim the franchise built during onboarding. Best-effort: a failed
-      // link shouldn't block account creation — tenantSlug is always present
-      // here since the form only renders once it's set.
+  
+    // Link the franchise built during onboarding as soon as we have a user id —
+    // don't wait for a session, since email confirmation being ON means data.session
+    // is null at signup time even though data.user already exists.
+    if (data.user) {
       try {
-        await fetch(`${API}/profiles/link`, {
+        const linkRes = await fetch(`${API}/profiles/link`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ user_id: data.user.id, tenant_slug: tenantSlug }),
         });
-      } catch {
-        // ignore — non-blocking
+        const linkBody = await linkRes.json();
+        if (linkBody.status !== "success") {
+          console.error("profiles/link failed:", linkBody.message);
+        }
+      } catch (linkErr) {
+        console.error("profiles/link request failed:", linkErr);
       }
-      setSubmitting(false);
+    }
+
+    setSubmitting(false);
+    if (data.session) {
       router.push("/dashboard");
     } else {
-      setSubmitting(false);
       setCheckEmail(true);
     }
   }
+
 
   const label = { fontSize: 14, fontWeight: 600 as const, color: tokens.textPrimary, marginBottom: 8, display: "block" };
   const input = { width: "100%", padding: "10px 12px", border: `1px solid ${tokens.borderDefault}`, borderRadius: 8, fontSize: 14, fontFamily: tokens.fontSans, boxSizing: "border-box" as const };
