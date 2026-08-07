@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Blueslate — XP League Frisco",
+  title: "Blueslate - AI Receptionist ",
   description: "AI Receptionist Dashboard",
 };
 
